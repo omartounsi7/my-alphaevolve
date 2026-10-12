@@ -1,5 +1,6 @@
 """The Evaluator class: runs a program and measures how good it is."""
 
+import math
 from typing import Any
 
 from my_alphaevolve.problem import ScoreFunction
@@ -23,7 +24,8 @@ class Evaluator:
     def execute(self, program: Program) -> float:
         """Run the program's code and return its score (higher is better).
 
-        A program that crashes or breaks the problem's rules gets failure_score.
+        A program that crashes, breaks the problem's rules, or is given a score
+        that is not a finite number gets failure_score.
         """
         try:
             # An empty dictionary that will collect every name the code defines
@@ -31,7 +33,14 @@ class Evaluator:
             # Run the code; its functions and variables end up in namespace
             exec(program.code, namespace)
             # Let the problem decide how good the result is
-            return self.score_function(namespace)
+            score: Any = self.score_function(namespace)
+            # The score function is written by the user, so its result is checked too:
+            # it must be a number (bool does not count) and neither nan nor infinite
+            if isinstance(score, bool) or not isinstance(score, int | float):
+                raise ValueError(f"the score must be a number, got {type(score).__name__}")
+            if not math.isfinite(score):
+                raise ValueError(f"the score must be a finite number, got {score}")
+            return float(score)
         except Exception as error:
             # The code crashed or misbehaved: report it and give the worst score
             print(f"Evaluation failed: {error}")
