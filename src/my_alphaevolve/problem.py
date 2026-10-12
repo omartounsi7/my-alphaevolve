@@ -17,7 +17,7 @@ FUNCTION_NAME = "search"
 INITIAL_CODE = '''
 def search():
     """Return the x where we think the target function is lowest."""
-    return 0.0
+    return 0.1
 '''
 
 
@@ -33,14 +33,15 @@ def score_function(namespace: dict[str, Any]) -> float:
     Raises ValueError with an explanation if the program breaks the rules.
     """
 
-    # If the program did not implement the required function, we return an error.
+    # If the program did not implement the required function, we raise an error.
     if FUNCTION_NAME not in namespace:
         raise ValueError(f"the program does not define a function called {FUNCTION_NAME}")
-    
+
     # Call the program's function to get its answer
     answer = namespace[FUNCTION_NAME]()
 
-    # If the returned answer is not of the correct type (for this particular problem we expect a number), we return an error.
+    # If the returned answer is not of the correct type (for this particular problem
+    # we expect a number), we raise an error.
     # bool counts as a number in Python, so it has to be ruled out separately
     if isinstance(answer, bool) or not isinstance(answer, int | float):
         raise ValueError(f"expected a number, got {type(answer).__name__}")
@@ -49,5 +50,6 @@ def score_function(namespace: dict[str, Any]) -> float:
     if not math.isfinite(answer):
         raise ValueError(f"expected a finite number, got {answer}")
 
-    # A lower point on the curve is a better answer, so flip the sign to get the score. Higher score means better.
+    # A lower point on the curve is a better answer, so flip the sign to get the score.
+    # Higher score means better.
     return -target_function(answer)
