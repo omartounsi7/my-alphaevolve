@@ -17,5 +17,5 @@ class Program:
         self.generation = generation
 
     def __repr__(self):
-        # This replaces what print(program) shows
+        # This replaces what print(program) shows. Example: Program(id=3f2a9c1e, score=1.0, generation=0)
         return f"Program(id={self.id[:8]}, score={self.score}, generation={self.generation})"
