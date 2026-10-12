@@ -1,5 +1,6 @@
 """Checks that load_problem turns the user's two files into a Problem."""
 
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -44,6 +45,29 @@ class TestLoadProblem(unittest.TestCase):
         evaluation = self.write_file("evaluation.py", "x = 1\n")
         with self.assertRaises(ValueError):
             load_problem(initial, evaluation)
+
+    def test_invisible_marker_at_the_start_of_the_initial_program_is_dropped(self) -> None:
+        # "utf-8-sig" writes the invisible marker (BOM) that some Windows editors add
+        initial = self.folder / "initial.py"
+        initial.write_text("answer = 42\n", encoding="utf-8-sig")
+        evaluation = self.write_file("evaluation.py", "def evaluate(namespace):\n    return 0.0\n")
+        self.assertEqual(load_problem(initial, evaluation).initial_code, "answer = 42\n")
+
+    def test_evaluation_file_can_import_a_file_next_to_it(self) -> None:
+        self.write_file("my_alphaevolve_test_helper.py", "VALUE = 7.0\n")
+        initial = self.write_file("initial.py", "answer = 42\n")
+        evaluation = self.write_file(
+            "evaluation.py",
+            "import my_alphaevolve_test_helper\n\n"
+            "def evaluate(namespace):\n    return my_alphaevolve_test_helper.VALUE\n",
+        )
+        # Python remembers imported modules; forget this one once the test is over
+        self.addCleanup(sys.modules.pop, "my_alphaevolve_test_helper", None)
+        search_folders_before = list(sys.path)
+        problem = load_problem(initial, evaluation)
+        self.assertEqual(problem.score_function({}), 7.0)
+        # Loading must leave Python's list of import folders as it found it
+        self.assertEqual(sys.path, search_folders_before)
 
 
 if __name__ == "__main__":
