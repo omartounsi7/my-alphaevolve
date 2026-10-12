@@ -16,11 +16,20 @@ scores the result, and a database keeps the programs to build on next.
 
 ## Setup
 
-Run once, from the repository root (Windows PowerShell):
+Run once, from the repository root.
+
+Windows (PowerShell):
 
 ```powershell
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -e ".[dev]"
+```
+
+Linux and macOS:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -e ".[dev]"
 ```
 
 ## Defining a problem
@@ -36,6 +45,9 @@ As in AlphaEvolve, you describe a problem with two Python files:
 See `examples/function_minimization/` for a complete example.
 
 ## Everyday commands
+
+These are written for Windows. On Linux and macOS, replace
+`.venv\Scripts\python.exe` with `.venv/bin/python` and every `\` with `/`.
 
 ```powershell
 # Run the program on the example problem
