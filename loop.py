@@ -6,7 +6,7 @@ def run_my_alphaevolve():
 
     database = Database()
 
-    # parent_program, inspirations = database.sample()
+    # parent_program = database.sample()
     # prompt = prompt_sampler.build(parent_program, inspirations)
     # diff = llm.generate(prompt)
     # child_program = apply_diff(parent_program, diff)
