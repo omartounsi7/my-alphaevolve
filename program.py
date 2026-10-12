@@ -15,3 +15,7 @@ class Program:
         self.parent_id = parent_id
         # How many mutation steps separate this program from the initial one
         self.generation = generation
+
+    def __repr__(self):
+        # This replaces what print(program) shows
+        return f"Program(id={self.id[:8]}, score={self.score}, generation={self.generation})"
