@@ -1,5 +1,10 @@
+from database import Database
+
+
 def run_my_alphaevolve():
     print("hello from my alphaevolve!")
+
+    database = Database()
 
     # parent_program, inspirations = database.sample()
     # prompt = prompt_sampler.build(parent_program, inspirations)
