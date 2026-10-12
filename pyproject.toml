@@ -9,10 +9,41 @@ build-backend = "setuptools.build_meta"
 name = "my-alphaevolve"
 version = "0.1.0"
 description = "A minimal, from-scratch implementation of the AlphaEvolve algorithm"
+readme = "README.md"
 requires-python = ">=3.10"
-# Third-party packages the code needs; none yet
+# Third-party packages the code needs to run; none yet
 dependencies = []
+
+[project.optional-dependencies]
+# Tools needed only while developing; installed with: pip install -e ".[dev]"
+dev = [
+    "mypy>=1.10",  # type checker: finds type mistakes without running the code
+    "ruff>=0.6",   # linter and formatter: finds common bugs and keeps the style uniform
+]
 
 [tool.setuptools.packages.find]
 # Tells setuptools that the package lives inside the src folder
 where = ["src"]
+
+[tool.mypy]
+# The folders mypy checks when run with no arguments
+files = ["src", "scripts", "tests"]
+# Where mypy finds the my_alphaevolve package when checking a single file
+mypy_path = "src"
+# Turn on every check, including "every function must have type hints"
+strict = true
+# Use mypy's pure-Python parser: Windows Application Control blocks the faster native one
+native_parser = false
+
+[tool.ruff]
+# Maximum line length, for both the linter and the formatter
+line-length = 100
+# The oldest Python version the code must keep working on
+target-version = "py310"
+
+[tool.ruff.lint]
+# Rule families to enforce:
+#   E, W = style errors and warnings    F = real mistakes (unused or undefined names)
+#   I    = import order                 B = common bug patterns
+#   UP   = outdated syntax              N = naming conventions
+select = ["E", "W", "F", "I", "B", "UP", "N"]
