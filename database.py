@@ -10,7 +10,7 @@ class Database:
         self.programs: dict[str, Program] = {}
 
     def add(self, program):
-        # Store a program under using its id
+        # Store a program under under its id
         self.programs[program.id] = program
 
     def get(self, program_id):
