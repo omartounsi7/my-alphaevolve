@@ -7,7 +7,10 @@ from my_alphaevolve.program import Program
 
 
 def run_my_alphaevolve(problem: Problem) -> None:
-    """Run the evolutionary search on the user's problem from start to finish."""
+    """Run the evolutionary search on the user's problem from start to finish.
+
+    Raises ValueError if the user's initial program fails its evaluation.
+    """
     print("hello from my alphaevolve!")
 
     # The memory of the search; created once and reused for the whole run
@@ -18,6 +21,9 @@ def run_my_alphaevolve(problem: Problem) -> None:
     # Score the user's initial solution, then store it as the first possible parent
     initial_program = Program(problem.initial_code)
     results = evaluator.execute(initial_program)
+    if results == evaluator.failure_score:
+        # Evolution needs a working starting point, so stop now with a clear message
+        raise ValueError("The initial program failed its evaluation; fix it and run again.")
     database.add(initial_program, results)
 
     print(f"Best program so far: {database.get_best_program()}")
