@@ -44,10 +44,10 @@ class TestDatabase(unittest.TestCase):
             self.assertIn(self.database.sample(), [self.parent, self.child])
 
     def test_best_returns_the_highest_score(self):
-        self.assertIs(self.database.best(), self.child)
+        self.assertIs(self.database.get_best_program(), self.child)
 
     def test_best_of_an_empty_database_is_none(self):
-        self.assertIsNone(Database().best())
+        self.assertIsNone(Database().get_best_program())
 
 
 if __name__ == "__main__":

@@ -23,7 +23,7 @@ class Database:
         # Pick the parent for the next mutation. For now: random. Later: Evolutionary algorithms
         return random.choice(list(self.programs.values()))
 
-    def best(self):
+    def get_best_program(self):
         # Return the highest-scoring program
         best_program = None
         for program in self.programs.values():
