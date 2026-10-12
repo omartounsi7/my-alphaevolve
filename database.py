@@ -13,6 +13,10 @@ class Database:
         # Store a program under using its id
         self.programs[program.id] = program
 
+    def get(self, program_id):
+        # Look up one program by its id (returns None if no program has that id)
+        return self.programs.get(program_id)
+
     def sample(self):
         # Pick the parent for the next mutation. For now: random. Later: Evolutionary algorithms
         return random.choice(list(self.programs.values()))
