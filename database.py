@@ -9,8 +9,9 @@ class Database:
         # All stored programs, as a dictionary: program id -> Program object
         self.programs: dict[str, Program] = {}
 
-    def add(self, program):
-        # Store a program under under its id
+    def add(self, program, results):
+        # Store a program and its score under its id
+        program.score = results
         self.programs[program.id] = program
 
     def get(self, program_id):
