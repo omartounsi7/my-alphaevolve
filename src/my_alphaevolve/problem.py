@@ -11,6 +11,7 @@ Nothing in this file is specific to any one problem.
 """
 
 import runpy
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -44,11 +45,22 @@ def load_problem(initial_program_path: Path, evaluation_path: Path) -> Problem:
         if not path.is_file():
             raise FileNotFoundError(f"no such file: {path}")
 
-    # The initial program is only read, not run: programs travel as text
-    initial_code = initial_program_path.read_text(encoding="utf-8")
+    # The initial program is only read, not run: programs travel as text.
+    # "utf-8-sig" is UTF-8 that also drops the invisible marker (BOM) which
+    # some Windows editors put at the start of a file and Python cannot run
+    initial_code = initial_program_path.read_text(encoding="utf-8-sig")
 
-    # Run the evaluation file and collect every name it defines in a dictionary
-    evaluation_names = runpy.run_path(str(evaluation_path))
+    # The folder of the evaluation file, as an absolute path
+    evaluation_folder = str(evaluation_path.resolve().parent)
+    # Let the evaluation file import helper files that sit next to it:
+    # sys.path is the list of folders Python searches when it sees "import"
+    sys.path.insert(0, evaluation_folder)
+    try:
+        # Run the evaluation file and collect every name it defines in a dictionary
+        evaluation_names = runpy.run_path(str(evaluation_path))
+    finally:
+        # Put the search list back as it was, whether or not the file ran cleanly
+        sys.path.remove(evaluation_folder)
     # None if the file does not define the required function
     score_function = evaluation_names.get(EVALUATE_FUNCTION_NAME)
     if not callable(score_function):
