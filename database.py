@@ -3,6 +3,8 @@ import random
 
 
 class Database:
+    """Stores every program produced so far and picks which one to mutate next."""
+
     def __init__(self):
         # All stored programs, as a dictionary: program id -> Program object
         self.programs: dict[str, Program] = {}
@@ -16,7 +18,7 @@ class Database:
         return random.choice(list(self.programs.values()))
 
     def best(self):
-        # Return the highest-scoring program, skipping ones not evaluated yet
+        # Return the highest-scoring program
         best_program = None
         for program in self.programs.values():
             if program.score is None:
