@@ -1,4 +1,4 @@
-from loop import run_my_alphaevolve
+from my_alphaevolve.loop import run_my_alphaevolve
 
 def main():
     run_my_alphaevolve()

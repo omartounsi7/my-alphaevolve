@@ -1,4 +1,4 @@
-from database import Database
+from my_alphaevolve.database import Database
 
 
 def run_my_alphaevolve():

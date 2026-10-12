@@ -1,0 +1,18 @@
+# Describes this project to Python's packaging tools (pip, uv, ...)
+
+[build-system]
+# The tool that turns the src folder into an installable package
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "my-alphaevolve"
+version = "0.1.0"
+description = "A minimal, from-scratch implementation of the AlphaEvolve algorithm"
+requires-python = ">=3.10"
+# Third-party packages the code needs; none yet
+dependencies = []
+
+[tool.setuptools.packages.find]
+# Tells setuptools that the package lives inside the src folder
+where = ["src"]

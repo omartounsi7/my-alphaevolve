@@ -1,5 +1,6 @@
-from program import Program
 import random
+
+from my_alphaevolve.program import Program
 
 
 class Database:
