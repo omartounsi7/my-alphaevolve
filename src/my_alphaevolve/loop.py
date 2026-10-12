@@ -1,10 +1,14 @@
+"""The main evolution loop that ties all the building blocks together."""
+
 from my_alphaevolve.database import Database
 
 
-def run_my_alphaevolve():
+def run_my_alphaevolve() -> None:
+    """Run the evolutionary search from start to finish."""
     print("hello from my alphaevolve!")
 
-    database = Database()
+    # The memory of the search; not used yet because the loop below is still a plan
+    database = Database()  # noqa: F841
 
     # parent_program = database.sample()
     # prompt = prompt_sampler.build(parent_program)
