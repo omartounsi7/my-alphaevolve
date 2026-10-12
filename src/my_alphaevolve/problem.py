@@ -1,55 +1,59 @@
-"""The problem being solved: minimize a function.
+"""The Problem class: what the user wants solved, in a form the algorithm can use.
 
-Every candidate program must define a function called search that takes no
-arguments and returns one number: its best guess for the x where
-target_function(x) is lowest.
+As in AlphaEvolve, the user supplies two things, each as a Python file:
 
-Later on this file will be made to handle any user-inputted problem.
+- an initial solution: the program that evolution starts from;
+- the evaluation criteria: a file defining a function called evaluate, which
+  receives every name a candidate program defined (a dictionary) and returns
+  that program's score (a number, higher is better).
+
+Nothing in this file is specific to any one problem.
 """
 
-import math
+import runpy
+from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
-# The name of the function every program must define
-FUNCTION_NAME = "search"
+# The kind of function that scores a program: it receives the names the program
+# defined (a dictionary) and returns that program's score (a number)
+ScoreFunction = Callable[[dict[str, Any]], float]
 
-# The starting program, as text: a deliberately poor guess
-INITIAL_CODE = '''
-def search():
-    """Return the x where we think the target function is lowest."""
-    return 0.1
-'''
+# The name of the function the user's evaluation file must define
+EVALUATE_FUNCTION_NAME = "evaluate"
 
 
-def target_function(x: float) -> float:
-    """Return the height of the bumpy curve at x; this is what we want to make small."""
-    return math.sin(3 * x) + x**2 / 10
+class Problem:
+    """One problem to solve: an initial solution plus a way to score solutions."""
+
+    def __init__(self, initial_code: str, score_function: ScoreFunction) -> None:
+        # The source code of the starting program, as text
+        self.initial_code: str = initial_code
+        # The user's function that turns a finished run of a program into a score
+        self.score_function: ScoreFunction = score_function
 
 
-def score_function(namespace: dict[str, Any]) -> float:
-    """Turn one finished run of a program into a score (higher is better).
+def load_problem(initial_program_path: Path, evaluation_path: Path) -> Problem:
+    """Build a Problem from the two files the user provides.
 
-    namespace holds every name the program defined when its code was run.
-    Raises ValueError with an explanation if the program breaks the rules.
+    Raises FileNotFoundError if a file is missing, and ValueError if the
+    evaluation file does not define a function called evaluate.
     """
+    # Check both files up front, so a wrong path gives a clear message
+    for path in (initial_program_path, evaluation_path):
+        if not path.is_file():
+            raise FileNotFoundError(f"no such file: {path}")
 
-    # If the program did not implement the required function, we raise an error.
-    if FUNCTION_NAME not in namespace:
-        raise ValueError(f"the program does not define a function called {FUNCTION_NAME}")
+    # The initial program is only read, not run: programs travel as text
+    initial_code = initial_program_path.read_text(encoding="utf-8")
 
-    # Call the program's function to get its answer
-    answer = namespace[FUNCTION_NAME]()
+    # Run the evaluation file and collect every name it defines in a dictionary
+    evaluation_names = runpy.run_path(str(evaluation_path))
+    # None if the file does not define the required function
+    score_function = evaluation_names.get(EVALUATE_FUNCTION_NAME)
+    if not callable(score_function):
+        raise ValueError(
+            f"{evaluation_path} must define a function called {EVALUATE_FUNCTION_NAME}"
+        )
 
-    # If the returned answer is not of the correct type (for this particular problem
-    # we expect a number), we raise an error.
-    # bool counts as a number in Python, so it has to be ruled out separately
-    if isinstance(answer, bool) or not isinstance(answer, int | float):
-        raise ValueError(f"expected a number, got {type(answer).__name__}")
-
-    # Reject infinity and "not a number" (nan), which would break score comparisons
-    if not math.isfinite(answer):
-        raise ValueError(f"expected a finite number, got {answer}")
-
-    # A lower point on the curve is a better answer, so flip the sign to get the score.
-    # Higher score means better.
-    return -target_function(answer)
+    return Problem(initial_code, score_function)

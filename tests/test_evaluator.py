@@ -1,10 +1,15 @@
-"""Checks that the Evaluator and the function-minimization problem behave as intended."""
+"""Checks that the Evaluator behaves as intended, using the function-minimization example."""
 
+import math
 import unittest
+from pathlib import Path
 
 from my_alphaevolve.evaluator import Evaluator
-from my_alphaevolve.problem import INITIAL_CODE, score_function, target_function
+from my_alphaevolve.problem import load_problem
 from my_alphaevolve.program import Program
+
+# The folder holding the example problem, found relative to this test file
+EXAMPLE_FOLDER = Path(__file__).parent.parent / "examples" / "function_minimization"
 
 
 def make_code(answer: str) -> str:
@@ -13,11 +18,15 @@ def make_code(answer: str) -> str:
 
 
 class TestEvaluator(unittest.TestCase):
-    """Checks on Evaluator.execute, using the real problem's score function."""
+    """Checks on Evaluator.execute, using the example problem's evaluation criteria."""
 
     def setUp(self) -> None:
-        # Runs before every test: a fresh evaluator for the minimization problem
-        self.evaluator = Evaluator(score_function)
+        # Runs before every test: the example problem and a fresh evaluator for it
+        self.problem = load_problem(
+            EXAMPLE_FOLDER / "initial_program.py",
+            EXAMPLE_FOLDER / "evaluation.py",
+        )
+        self.evaluator = Evaluator(self.problem.score_function)
 
     def score_of(self, code: str) -> float:
         """Evaluate a piece of code and return its score."""
@@ -25,17 +34,19 @@ class TestEvaluator(unittest.TestCase):
 
     def test_initial_program_gets_a_real_score(self) -> None:
         # The starting program must be valid, otherwise evolution has nothing to build on
-        self.assertNotEqual(self.score_of(INITIAL_CODE), self.evaluator.failure_score)
+        score = self.score_of(self.problem.initial_code)
+        self.assertNotEqual(score, self.evaluator.failure_score)
 
     def test_score_is_the_negated_target_value(self) -> None:
-        self.assertAlmostEqual(self.score_of(make_code("2")), -target_function(2))
+        # The example's target function is sin(3x) + x^2 / 10, here at x = 2
+        self.assertAlmostEqual(self.score_of(make_code("2")), -(math.sin(6) + 0.4))
 
     def test_lower_point_on_the_curve_scores_higher(self) -> None:
         # x = -0.5 is near the bottom of the deepest valley; x = 0.5 is near a peak
         self.assertGreater(self.score_of(make_code("-0.5")), self.score_of(make_code("0.5")))
 
     def test_execute_does_not_change_the_program(self) -> None:
-        program = Program(INITIAL_CODE)
+        program = Program(self.problem.initial_code)
         self.evaluator.execute(program)
         self.assertIsNone(program.score)
 

@@ -1,13 +1,9 @@
 """The Evaluator class: runs a program and measures how good it is."""
 
-from collections.abc import Callable
 from typing import Any
 
+from my_alphaevolve.problem import ScoreFunction
 from my_alphaevolve.program import Program
-
-# The kind of function an Evaluator needs: it receives the names a program
-# defined (a dictionary) and returns that program's score (a number)
-ScoreFunction = Callable[[dict[str, Any]], float]
 
 
 class Evaluator:

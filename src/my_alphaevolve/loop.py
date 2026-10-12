@@ -2,21 +2,21 @@
 
 from my_alphaevolve.database import Database
 from my_alphaevolve.evaluator import Evaluator
-from my_alphaevolve.problem import INITIAL_CODE, score_function
+from my_alphaevolve.problem import Problem
 from my_alphaevolve.program import Program
 
 
-def run_my_alphaevolve() -> None:
-    """Run the evolutionary search from start to finish."""
+def run_my_alphaevolve(problem: Problem) -> None:
+    """Run the evolutionary search on the user's problem from start to finish."""
     print("hello from my alphaevolve!")
 
     # The memory of the search; created once and reused for the whole run
     database = Database()
-    # The judge that scores programs; created once and reused for the whole run
-    evaluator = Evaluator(score_function)
+    # The judge that scores programs with the user's criteria; created once and reused
+    evaluator = Evaluator(problem.score_function)
 
-    # Score the starting program, then store it as the first possible parent
-    initial_program = Program(INITIAL_CODE)
+    # Score the user's initial solution, then store it as the first possible parent
+    initial_program = Program(problem.initial_code)
     results = evaluator.execute(initial_program)
     database.add(initial_program, results)
 

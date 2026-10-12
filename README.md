@@ -8,7 +8,8 @@ scores the result, and a database keeps the programs to build on next.
 
 | Path | Contents |
 |---|---|
-| `src/my_alphaevolve/` | The algorithm's code (`Program`, `Database`, `Evaluator`, the problem, the loop) |
+| `src/my_alphaevolve/` | The algorithm's code (`Program`, `Database`, `Evaluator`, `Problem`, the loop) |
+| `examples/` | Ready-made problems, one folder each |
 | `scripts/` | Files you launch directly |
 | `tests/` | Automatic checks |
 | `pyproject.toml` | Project description and tool settings |
@@ -22,11 +23,23 @@ python -m venv .venv
 .venv\Scripts\python.exe -m pip install -e ".[dev]"
 ```
 
+## Defining a problem
+
+As in AlphaEvolve, you describe a problem with two Python files:
+
+- **An initial solution**: the program that evolution starts from.
+- **The evaluation criteria**: a file defining `evaluate(namespace)`. It receives
+  a dictionary of every name a candidate program defined, and returns that
+  program's score as a number (higher is better). It should raise an error if
+  the program breaks the problem's rules.
+
+See `examples/function_minimization/` for a complete example.
+
 ## Everyday commands
 
 ```powershell
-# Run the program
-.venv\Scripts\python.exe scripts\run.py
+# Run the program on the example problem
+.venv\Scripts\python.exe scripts\run.py examples\function_minimization\initial_program.py examples\function_minimization\evaluation.py
 
 # Run the tests
 .venv\Scripts\python.exe -m unittest discover tests
