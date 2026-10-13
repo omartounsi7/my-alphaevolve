@@ -35,12 +35,20 @@ class TestRunMyAlphaevolve(unittest.TestCase):
         return printed.getvalue()
 
     def test_reports_the_score_of_a_valid_initial_program(self) -> None:
-        output = self.run_and_capture_output(Problem("answer = 3.5\n", read_answer))
+        code = '"""Make answer as large as possible."""\n\nanswer = 3.5\n'
+        output = self.run_and_capture_output(Problem(code, read_answer))
         self.assertIn("score=3.5", output)
 
-    def test_broken_initial_program_stops_the_run(self) -> None:
+    def test_prompt_contains_the_problem_description(self) -> None:
+        code = '"""Make answer as large as possible."""\n\nanswer = 3.5\n'
+        output = self.run_and_capture_output(Problem(code, read_answer))
+        self.assertIn("Problem description:\nMake answer as large as possible.", output)
+
+    def test_failing_initial_program_stops_the_run(self) -> None:
+        # Valid Python with a description, but it crashes as soon as it runs
+        code = '"""Make answer as large as possible."""\n\nanswer = 1 / 0\n'
         with self.assertRaises(ValueError):
-            self.run_and_capture_output(Problem("answer = (\n", read_answer))
+            self.run_and_capture_output(Problem(code, read_answer))
 
 
 class TestRunScript(unittest.TestCase):
