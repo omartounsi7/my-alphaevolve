@@ -15,6 +15,7 @@ from my_alphaevolve.storage import RunStorage
 def run_my_alphaevolve(
     problem: Problem,
     llm: LLM,
+    evaluator: Evaluator,
     iterations: int,
     output_folder: Path | None = None,
 ) -> Database:
@@ -22,6 +23,9 @@ def run_my_alphaevolve(
 
     llm is the language model that proposes improved programs; the caller
     chooses it, so the loop works the same with a fake or a real one.
+
+    evaluator is the judge that scores programs; the caller chooses it too:
+    a ProcessEvaluator for real runs, an InProcessEvaluator for trusted code.
 
     iterations is how many times the evolution step is repeated; each
     repetition asks the LLM for one new program.
@@ -44,8 +48,6 @@ def run_my_alphaevolve(
 
     # The memory of the search; created once and reused for the whole run
     database = Database()
-    # The judge that scores programs with the user's criteria; created once and reused
-    evaluator = Evaluator(problem.score_function)
     # The writer of prompts for the LLM; created once and reused for the whole run
     prompt_sampler = PromptSampler(problem.description)
     # The keeper of the run's files; None when the run is not saved

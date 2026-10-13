@@ -96,6 +96,26 @@ different one, edit `target_function`, `LOWER_BOUNDS` and `UPPER_BOUNDS` in
 `target.py`; nothing else needs to change. The number of variables is the length
 of the two bounds lists.
 
+## How programs are run
+
+Programs written by an LLM cannot be trusted to behave, so each one is run in
+its own separate Python process:
+
+- **Time limit.** A program that takes longer than `--timeout` seconds (30 by
+  default) is stopped and counted as failed. An infinite loop cannot hang a run.
+- **Crashes stay contained.** A program that crashes or exits only ends its own
+  process; the run carries on.
+- **No leftovers.** Nothing a program changes in Python reaches the next program
+  or the run itself.
+
+Each of these processes loads the evaluation file itself, so slow work at the
+top of that file is repeated for every program. Starting a process costs about
+a tenth of a second per program.
+
+This is **not a security barrier**: a program still runs with your permissions
+and can read and write your files. Read what the LLM produces before trusting a
+long unattended run.
+
 ## How parents are chosen
 
 Each iteration improves one existing program, the parent. The database picks it
@@ -146,6 +166,9 @@ These are written for Windows. On Linux and macOS, replace
 
 # The same, saved in a folder; launch it again to continue the run for 50 more iterations
 .venv\Scripts\python.exe scripts\run.py examples\function_minimization\initial_program.py examples\function_minimization\evaluation.py --iterations 50 --output runs\function_minimization
+
+# The same, stopping any program that runs for more than 5 seconds
+.venv\Scripts\python.exe scripts\run.py examples\function_minimization\initial_program.py examples\function_minimization\evaluation.py --timeout 5
 
 # Run the tests
 .venv\Scripts\python.exe -m unittest discover tests

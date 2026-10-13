@@ -1,7 +1,8 @@
 """Entry point: run this file to start my-alphaevolve on a problem.
 
 Usage:
-    python scripts/run.py INITIAL_PROGRAM EVALUATION_FILE [--iterations N] [--output FOLDER]
+    python scripts/run.py INITIAL_PROGRAM EVALUATION_FILE
+        [--iterations N] [--output FOLDER] [--timeout SECONDS]
 """
 
 import argparse
@@ -9,6 +10,7 @@ import io
 import sys
 from pathlib import Path
 
+from my_alphaevolve.evaluator import DEFAULT_TIMEOUT_SECONDS, ProcessEvaluator
 from my_alphaevolve.llm import FakeLLM
 from my_alphaevolve.loop import run_my_alphaevolve
 from my_alphaevolve.problem import load_problem
@@ -79,17 +81,31 @@ def main() -> None:
             "that run is continued (default: the run is not saved)"
         ),
     )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=DEFAULT_TIMEOUT_SECONDS,
+        help=(
+            "how many seconds one program may run before it is stopped "
+            f"(default: {DEFAULT_TIMEOUT_SECONDS})"
+        ),
+    )
     # The values the user typed, available as args.initial_program, args.evaluation_file,
-    # args.iterations and args.output
+    # args.iterations, args.output and args.timeout
     args = parser.parse_args()
     if args.iterations < 0:
         # parser.error prints the usage message with this explanation, then stops
         parser.error("--iterations must be 0 or more")
+    if args.timeout <= 0:
+        parser.error("--timeout must be above 0")
 
     problem = load_problem(args.initial_program, args.evaluation_file)
     # Temporary: a fake LLM with one prepared reply, until a real one is connected
     llm = FakeLLM([FAKE_REPLY])
-    database = run_my_alphaevolve(problem, llm, args.iterations, args.output)
+    # Each program is scored in its own process, so a bad one cannot hang or end the run.
+    # resolve() makes the path absolute, so it stays valid inside those processes.
+    evaluator = ProcessEvaluator(args.evaluation_file.resolve(), args.timeout)
+    database = run_my_alphaevolve(problem, llm, evaluator, args.iterations, args.output)
 
     # Show the result of the run: the best program found and its code
     best_program = database.get_best_program()

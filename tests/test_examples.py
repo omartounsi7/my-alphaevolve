@@ -1,10 +1,13 @@
-"""Checks that the example problems in the examples folder work with the Evaluator."""
+"""Checks that the example problems in the examples folder work with the evaluator.
+
+The programs are scored the way a real run scores them: each in its own process.
+"""
 
 import runpy
 import unittest
 from pathlib import Path
 
-from my_alphaevolve.evaluator import Evaluator
+from my_alphaevolve.evaluator import ProcessEvaluator
 from my_alphaevolve.problem import load_problem
 from my_alphaevolve.program import Program
 
@@ -44,7 +47,7 @@ class TestFunctionMinimization(unittest.TestCase):
             EXAMPLE_FOLDER / "initial_program.py",
             EXAMPLE_FOLDER / "evaluation.py",
         )
-        self.evaluator = Evaluator(self.problem.score_function)
+        self.evaluator = ProcessEvaluator(EXAMPLE_FOLDER / "evaluation.py")
         # The example's own settings: the function to minimize and the allowed region
         target_names = runpy.run_path(str(EXAMPLE_FOLDER / "target.py"))
         self.target_function = target_names["target_function"]

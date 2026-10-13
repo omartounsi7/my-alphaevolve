@@ -47,9 +47,9 @@ def read_description(initial_code: str) -> str:
 
 
 class Problem:
-    """One problem to solve: an initial solution plus a way to score solutions."""
+    """One problem to solve: an initial solution plus the file that scores solutions."""
 
-    def __init__(self, initial_code: str, score_function: ScoreFunction) -> None:
+    def __init__(self, initial_code: str, evaluation_path: Path | None = None) -> None:
         """Store the user's inputs.
 
         Raises ValueError if initial_code does not start with a docstring
@@ -57,10 +57,43 @@ class Problem:
         """
         # The source code of the starting program, as text
         self.initial_code: str = initial_code
-        # The user's function that turns a finished run of a program into a score
-        self.score_function: ScoreFunction = score_function
+        # The user's file defining evaluate. It is kept as a path, not as a function,
+        # because programs are scored in a separate process, which loads the file itself.
+        # None when the scoring is supplied some other way, as the tests do.
+        self.evaluation_path: Path | None = evaluation_path
         # What the problem is, in plain words; shown to the LLM in every prompt
         self.description: str = read_description(initial_code)
+
+
+def load_score_function(evaluation_path: Path) -> ScoreFunction:
+    """Run the user's evaluation file and return the evaluate function it defines.
+
+    Raises FileNotFoundError if the file is missing, and ValueError if it does
+    not define a function called evaluate.
+    """
+    if not evaluation_path.is_file():
+        raise FileNotFoundError(f"no such file: {evaluation_path}")
+
+    # The folder of the evaluation file, as an absolute path
+    evaluation_folder = str(evaluation_path.resolve().parent)
+    # Let the evaluation file import helper files that sit next to it:
+    # sys.path is the list of folders Python searches when it sees "import"
+    sys.path.insert(0, evaluation_folder)
+    try:
+        # Run the evaluation file and collect every name it defines in a dictionary
+        evaluation_names = runpy.run_path(str(evaluation_path))
+    finally:
+        # Put the search list back as it was, whether or not the file ran cleanly
+        sys.path.remove(evaluation_folder)
+    # None if the file does not define the required function
+    score_function = evaluation_names.get(EVALUATE_FUNCTION_NAME)
+    if not callable(score_function):
+        raise ValueError(
+            f"{evaluation_path} must define a function called {EVALUATE_FUNCTION_NAME}"
+        )
+    # mypy cannot know what a user's file defines; callable() is the check done here
+    checked_function: ScoreFunction = score_function
+    return checked_function
 
 
 def load_problem(initial_program_path: Path, evaluation_path: Path) -> Problem:
@@ -80,22 +113,10 @@ def load_problem(initial_program_path: Path, evaluation_path: Path) -> Problem:
     # some Windows editors put at the start of a file and Python cannot run
     initial_code = initial_program_path.read_text(encoding="utf-8-sig")
 
-    # The folder of the evaluation file, as an absolute path
-    evaluation_folder = str(evaluation_path.resolve().parent)
-    # Let the evaluation file import helper files that sit next to it:
-    # sys.path is the list of folders Python searches when it sees "import"
-    sys.path.insert(0, evaluation_folder)
-    try:
-        # Run the evaluation file and collect every name it defines in a dictionary
-        evaluation_names = runpy.run_path(str(evaluation_path))
-    finally:
-        # Put the search list back as it was, whether or not the file ran cleanly
-        sys.path.remove(evaluation_folder)
-    # None if the file does not define the required function
-    score_function = evaluation_names.get(EVALUATE_FUNCTION_NAME)
-    if not callable(score_function):
-        raise ValueError(
-            f"{evaluation_path} must define a function called {EVALUATE_FUNCTION_NAME}"
-        )
+    # Load the evaluation file once, only to report a mistake in it right away.
+    # The function itself is not kept: each program is scored in a separate
+    # process, which loads the file again from its path.
+    load_score_function(evaluation_path)
 
-    return Problem(initial_code, score_function)
+    # resolve() makes the path absolute, so it stays valid whatever folder a process starts in
+    return Problem(initial_code, evaluation_path.resolve())

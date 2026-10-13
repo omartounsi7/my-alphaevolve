@@ -4,9 +4,8 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any
 
-from my_alphaevolve.problem import Problem, load_problem
+from my_alphaevolve.problem import Problem, load_problem, load_score_function
 
 # A minimal valid initial program: a docstring describing the problem, then the code
 INITIAL_CODE = '"""Make answer as large as possible."""\n\nanswer = 42\n'
@@ -14,21 +13,16 @@ INITIAL_CODE = '"""Make answer as large as possible."""\n\nanswer = 42\n'
 EVALUATION_CODE = "def evaluate(namespace):\n    return float(namespace['answer'])\n"
 
 
-def read_answer(namespace: dict[str, Any]) -> float:
-    """Score a program by the value of the variable called answer that it defines."""
-    return float(namespace["answer"])
-
-
 class TestProblem(unittest.TestCase):
     """Checks on the Problem class and the description it reads from the initial program."""
 
     def test_description_is_the_docstring_at_the_top_of_the_initial_program(self) -> None:
-        problem = Problem(INITIAL_CODE, read_answer)
+        problem = Problem(INITIAL_CODE)
         self.assertEqual(problem.description, "Make answer as large as possible.")
 
     def test_description_keeps_every_line_of_a_long_docstring(self) -> None:
         code = '"""First line.\n\nSecond paragraph.\n"""\n\nanswer = 42\n'
-        problem = Problem(code, read_answer)
+        problem = Problem(code)
         self.assertEqual(problem.description, "First line.\n\nSecond paragraph.")
 
     def test_initial_programs_without_a_description_are_rejected(self) -> None:
@@ -43,7 +37,7 @@ class TestProblem(unittest.TestCase):
         for reason, code in bad_programs.items():
             # subTest reports each bad program separately if several fail
             with self.subTest(reason=reason), self.assertRaises(ValueError):
-                Problem(code, read_answer)
+                Problem(code)
 
 
 class TestLoadProblem(unittest.TestCase):
@@ -61,15 +55,29 @@ class TestLoadProblem(unittest.TestCase):
         path.write_text(content, encoding="utf-8")
         return path
 
-    def test_loads_the_initial_code_description_and_evaluate_function(self) -> None:
+    def test_loads_the_initial_code_description_and_evaluation_path(self) -> None:
         initial = self.write_file("initial.py", INITIAL_CODE)
         evaluation = self.write_file("evaluation.py", EVALUATION_CODE)
         problem = load_problem(initial, evaluation)
         # The initial program is kept as text, exactly as written
         self.assertEqual(problem.initial_code, INITIAL_CODE)
         self.assertEqual(problem.description, "Make answer as large as possible.")
-        # The score function is the user's evaluate, ready to be called
-        self.assertEqual(problem.score_function({"answer": 42}), 42.0)
+        # The evaluation file is kept as an absolute path, for the processes that will load it
+        assert problem.evaluation_path is not None
+        self.assertTrue(problem.evaluation_path.is_absolute())
+        self.assertEqual(problem.evaluation_path, evaluation.resolve())
+
+    def test_problem_made_without_an_evaluation_file_has_no_path(self) -> None:
+        self.assertIsNone(Problem(INITIAL_CODE).evaluation_path)
+
+    def test_score_function_is_the_evaluate_of_the_evaluation_file(self) -> None:
+        evaluation = self.write_file("evaluation.py", EVALUATION_CODE)
+        score_function = load_score_function(evaluation)
+        self.assertEqual(score_function({"answer": 42}), 42.0)
+
+    def test_missing_evaluation_file_raises_a_clear_error(self) -> None:
+        with self.assertRaises(FileNotFoundError):
+            load_score_function(self.folder / "does_not_exist.py")
 
     def test_missing_file_raises_a_clear_error(self) -> None:
         evaluation = self.write_file("evaluation.py", EVALUATION_CODE)
@@ -106,8 +114,8 @@ class TestLoadProblem(unittest.TestCase):
         # Python remembers imported modules; forget this one once the test is over
         self.addCleanup(sys.modules.pop, "my_alphaevolve_test_helper", None)
         search_folders_before = list(sys.path)
-        problem = load_problem(initial, evaluation)
-        self.assertEqual(problem.score_function({}), 7.0)
+        load_problem(initial, evaluation)
+        self.assertEqual(load_score_function(evaluation)({}), 7.0)
         # Loading must leave Python's list of import folders as it found it
         self.assertEqual(sys.path, search_folders_before)
 

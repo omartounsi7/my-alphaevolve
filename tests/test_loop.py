@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from my_alphaevolve.database import Database
+from my_alphaevolve.evaluator import InProcessEvaluator
 from my_alphaevolve.llm import FakeLLM
 from my_alphaevolve.loop import run_my_alphaevolve
 from my_alphaevolve.problem import Problem
@@ -37,13 +38,14 @@ class TestRunMyAlphaevolve(unittest.TestCase):
 
     def setUp(self) -> None:
         # Runs before every test: a problem whose initial program scores 3.5
-        self.problem = Problem(INITIAL_CODE, read_answer)
+        self.problem = Problem(INITIAL_CODE)
 
     def run_quietly(self, problem: Problem, llm: FakeLLM, iterations: int = 1) -> Database:
         """Run the loop without showing what it prints, and return its database."""
         # Send print() output into a throwaway variable instead of the screen
         with contextlib.redirect_stdout(io.StringIO()):
-            return run_my_alphaevolve(problem, llm, iterations)
+            # Programs are scored inside this process: fast, and fine for trusted test code
+            return run_my_alphaevolve(problem, llm, InProcessEvaluator(read_answer), iterations)
 
     def child_of(self, database: Database) -> Program:
         """Return the one program in the database that has a parent."""
@@ -138,7 +140,7 @@ class TestRunMyAlphaevolve(unittest.TestCase):
         # Valid Python with a description, but it crashes as soon as it runs
         code = '"""Make answer as large as possible."""\n\nanswer = 1 / 0\n'
         with self.assertRaises(ValueError):
-            self.run_quietly(Problem(code, read_answer), FakeLLM(["answer = 4.5\n"]))
+            self.run_quietly(Problem(code), FakeLLM(["answer = 4.5\n"]))
 
 
 class TestRunScript(unittest.TestCase):

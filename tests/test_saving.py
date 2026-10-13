@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from my_alphaevolve.database import Database
+from my_alphaevolve.evaluator import InProcessEvaluator
 from my_alphaevolve.llm import LLM, FakeLLM
 from my_alphaevolve.loop import run_my_alphaevolve
 from my_alphaevolve.problem import Problem
@@ -54,7 +55,7 @@ class TestSavingARun(unittest.TestCase):
 
     def setUp(self) -> None:
         # Runs before every test: a problem, and an output folder deleted after the test
-        self.problem = Problem(INITIAL_CODE, read_answer)
+        self.problem = Problem(INITIAL_CODE)
         temporary_folder = tempfile.TemporaryDirectory()
         self.addCleanup(temporary_folder.cleanup)
         self.output_folder = Path(temporary_folder.name) / "run"
@@ -63,7 +64,14 @@ class TestSavingARun(unittest.TestCase):
         """Run the loop with the output folder, without showing what it prints."""
         # Send print() output into a throwaway variable instead of the screen
         with contextlib.redirect_stdout(io.StringIO()):
-            return run_my_alphaevolve(problem or self.problem, llm, iterations, self.output_folder)
+            return run_my_alphaevolve(
+                problem or self.problem,
+                llm,
+                # Programs are scored inside this process: fine for trusted test code
+                InProcessEvaluator(read_answer),
+                iterations,
+                self.output_folder,
+            )
 
     def saved_iterations(self) -> list[int]:
         """Return the iteration number of every saved program, in file order."""
@@ -109,7 +117,7 @@ class TestSavingARun(unittest.TestCase):
         self.run_quietly(FakeLLM(["answer = 4.5\n"]), iterations=1)
         # The second session is given a broken initial program. A new run would
         # stop on it; a continued run never looks at it.
-        broken_problem = Problem('"""Describe."""\n\nanswer = 1 / 0\n', read_answer)
+        broken_problem = Problem('"""Describe."""\n\nanswer = 1 / 0\n')
         database = self.run_quietly(FakeLLM(["answer = 4.5\n"]), 1, problem=broken_problem)
         self.assertEqual(len(database.programs), 3)
 
@@ -136,7 +144,8 @@ class TestSavingARun(unittest.TestCase):
 
     def test_nothing_is_written_without_an_output_folder(self) -> None:
         with contextlib.redirect_stdout(io.StringIO()):
-            run_my_alphaevolve(self.problem, FakeLLM(["answer = 4.5\n"]), 2)
+            evaluator = InProcessEvaluator(read_answer)
+            run_my_alphaevolve(self.problem, FakeLLM(["answer = 4.5\n"]), evaluator, 2)
         self.assertFalse(self.output_folder.exists())
 
 
