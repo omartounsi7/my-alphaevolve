@@ -1,7 +1,7 @@
 """Entry point: run this file to start my-alphaevolve on a problem.
 
 Usage:
-    python scripts/run.py INITIAL_PROGRAM EVALUATION_FILE [--iterations N]
+    python scripts/run.py INITIAL_PROGRAM EVALUATION_FILE [--iterations N] [--output FOLDER]
 """
 
 import argparse
@@ -53,8 +53,17 @@ def main() -> None:
         default=DEFAULT_ITERATIONS,
         help=f"how many new programs to ask the LLM for (default: {DEFAULT_ITERATIONS})",
     )
-    # The values the user typed, available as args.initial_program, args.evaluation_file
-    # and args.iterations
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help=(
+            "folder where the run is saved; if it already holds a saved run, "
+            "that run is continued (default: the run is not saved)"
+        ),
+    )
+    # The values the user typed, available as args.initial_program, args.evaluation_file,
+    # args.iterations and args.output
     args = parser.parse_args()
     if args.iterations < 0:
         # parser.error prints the usage message with this explanation, then stops
@@ -63,7 +72,7 @@ def main() -> None:
     problem = load_problem(args.initial_program, args.evaluation_file)
     # Temporary: a fake LLM with one prepared reply, until a real one is connected
     llm = FakeLLM([FAKE_REPLY])
-    database = run_my_alphaevolve(problem, llm, args.iterations)
+    database = run_my_alphaevolve(problem, llm, args.iterations, args.output)
 
     # Show the result of the run: the best program found and its code
     best_program = database.get_best_program()

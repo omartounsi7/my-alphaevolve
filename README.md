@@ -96,6 +96,29 @@ different one, edit `target_function`, `LOWER_BOUNDS` and `UPPER_BOUNDS` in
 `target.py`; nothing else needs to change. The number of variables is the length
 of the two bounds lists.
 
+## Saving, stopping and continuing a run
+
+Add `--output` with a folder name to save a run. The folder then holds:
+
+| File | Contents |
+|---|---|
+| `programs.jsonl` | Every program of the run, one per line: its id, parent, generation, the iteration it was made in, its score and its code |
+| `best_program.py` | The code of the best program found so far, replaced whenever a better one appears |
+
+Each program is written the moment it has been evaluated, so:
+
+- **To stop a run**, press Ctrl+C. Every finished iteration is already saved.
+- **To continue it**, launch the same command with the same `--output` folder.
+  `--iterations` then means that many *more* iterations. The initial program is
+  not evaluated again.
+
+Use a new folder when the problem changes: scores saved for one problem mean
+nothing for another, and the program cannot tell the difference.
+
+The best program at any earlier point of the run can be read from
+`programs.jsonl`: it is the highest score among the lines whose `iteration` is
+not above that point.
+
 ## Everyday commands
 
 These are written for Windows. On Linux and macOS, replace
@@ -107,6 +130,9 @@ These are written for Windows. On Linux and macOS, replace
 
 # The same, choosing the number of iterations
 .venv\Scripts\python.exe scripts\run.py examples\function_minimization\initial_program.py examples\function_minimization\evaluation.py --iterations 50
+
+# The same, saved in a folder; launch it again to continue the run for 50 more iterations
+.venv\Scripts\python.exe scripts\run.py examples\function_minimization\initial_program.py examples\function_minimization\evaluation.py --iterations 50 --output runs\function_minimization
 
 # Run the tests
 .venv\Scripts\python.exe -m unittest discover tests

@@ -39,9 +39,10 @@ def extract_code(reply: str) -> str:
     return code.strip() + "\n"
 
 
-def make_child_program(parent_program: Program, reply: str) -> Program:
+def make_child_program(parent_program: Program, reply: str, iteration: int = 0) -> Program:
     """Create the child Program that an LLM's reply proposes for a parent.
 
+    iteration is the iteration of the run in which the child is made.
     The child is not evaluated yet: its score stays None until the Evaluator runs it.
     """
     return Program(
@@ -50,4 +51,5 @@ def make_child_program(parent_program: Program, reply: str) -> Program:
         parent_id=parent_program.id,
         # The child is one mutation step further from the initial program than its parent
         generation=parent_program.generation + 1,
+        iteration=iteration,
     )
