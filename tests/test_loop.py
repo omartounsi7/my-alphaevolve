@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 from typing import Any
 
+from my_alphaevolve.llm import FakeLLM
 from my_alphaevolve.loop import run_my_alphaevolve
 from my_alphaevolve.problem import Problem
 
@@ -26,12 +27,16 @@ def read_answer(namespace: dict[str, Any]) -> float:
 class TestRunMyAlphaevolve(unittest.TestCase):
     """Checks on run_my_alphaevolve, using a tiny made-up problem."""
 
+    def setUp(self) -> None:
+        # Runs before every test: a fake LLM whose prompts the tests can inspect
+        self.llm = FakeLLM(["a prepared reply"])
+
     def run_and_capture_output(self, problem: Problem) -> str:
         """Run the loop on a problem and return everything it printed."""
         printed = io.StringIO()
         # Send print() output into the printed variable instead of the screen
         with contextlib.redirect_stdout(printed):
-            run_my_alphaevolve(problem)
+            run_my_alphaevolve(problem, self.llm)
         return printed.getvalue()
 
     def test_reports_the_score_of_a_valid_initial_program(self) -> None:
@@ -39,10 +44,18 @@ class TestRunMyAlphaevolve(unittest.TestCase):
         output = self.run_and_capture_output(Problem(code, read_answer))
         self.assertIn("score=3.5", output)
 
-    def test_prompt_contains_the_problem_description(self) -> None:
+    def test_llm_receives_a_prompt_with_the_description_and_the_parent_code(self) -> None:
+        code = '"""Make answer as large as possible."""\n\nanswer = 3.5\n'
+        self.run_and_capture_output(Problem(code, read_answer))
+        self.assertEqual(len(self.llm.prompts), 1)
+        prompt = self.llm.prompts[0]
+        self.assertIn("Problem description:\nMake answer as large as possible.", prompt)
+        self.assertIn("answer = 3.5", prompt)
+
+    def test_reply_from_the_llm_is_reported(self) -> None:
         code = '"""Make answer as large as possible."""\n\nanswer = 3.5\n'
         output = self.run_and_capture_output(Problem(code, read_answer))
-        self.assertIn("Problem description:\nMake answer as large as possible.", output)
+        self.assertIn("a prepared reply", output)
 
     def test_failing_initial_program_stops_the_run(self) -> None:
         # Valid Python with a description, but it crashes as soon as it runs
