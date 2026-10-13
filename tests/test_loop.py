@@ -5,6 +5,7 @@ import io
 import random
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
@@ -149,6 +150,8 @@ class TestRunScript(unittest.TestCase):
             [sys.executable, str(RUN_SCRIPT), *arguments],
             capture_output=True,
             text=True,
+            # The script prints in UTF-8, so its output must be read back the same way
+            encoding="utf-8",
             check=False,
         )
 
@@ -173,6 +176,30 @@ class TestRunScript(unittest.TestCase):
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         self.assertIn("Iteration 3/3", result.stdout)
         self.assertNotIn("Iteration 4", result.stdout)
+
+    def test_characters_outside_the_system_encoding_are_printed(self) -> None:
+        # A problem whose initial program has an arrow in it. The fake LLM's reply
+        # fails here, so the initial program stays the best and its code is printed.
+        with tempfile.TemporaryDirectory() as folder_name:
+            folder = Path(folder_name)
+            initial = folder / "initial.py"
+            initial.write_text(
+                '"""Make answer as large as possible."""\n\n# small → large\nanswer = 1\n',
+                encoding="utf-8",
+            )
+            evaluation = folder / "evaluation.py"
+            evaluation.write_text(
+                "def evaluate(namespace):\n"
+                "    if 'answer' not in namespace:\n"
+                "        raise ValueError('answer must be ≥ 0, but is missing')\n"
+                "    return float(namespace['answer'])\n",
+                encoding="utf-8",
+            )
+            result = self.launch(str(initial), str(evaluation), "--iterations", "1")
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        # Both the failure message and the best program's code hold such a character
+        self.assertIn("answer must be ≥ 0", result.stdout)
+        self.assertIn("# small → large", result.stdout)
 
     def test_negative_iterations_are_reported(self) -> None:
         result = self.launch(
