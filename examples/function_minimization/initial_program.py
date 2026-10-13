@@ -1,25 +1,29 @@
-"""Problem: find the lowest point of a function of one variable.
+"""Problem: find the lowest point of a function of one or several variables.
 
-Write a function search(target_function, lower_bound, upper_bound) that returns
-a number x, with lower_bound <= x <= upper_bound, where target_function(x) is as
-small as possible.
+Write a function search(target_function, lower_bounds, upper_bounds) that returns
+a point where target_function(point) is as small as possible.
 
-target_function takes one number and returns one number. It is not known in
+A point is a list of numbers, one per variable. lower_bounds and upper_bounds
+are lists of the same length as a point: coordinate i of the returned point must
+satisfy lower_bounds[i] <= point[i] <= upper_bounds[i]. There may be only one
+variable; a point is then a list holding a single number.
+
+target_function takes a point and returns one number. It is not known in
 advance, so search must discover its shape by calling it. It may have several
 valleys, and the goal is the lowest one.
 
-The score is minus target_function(x) at the returned x, so a higher score is
-better.
+The score is minus target_function(point) at the returned point, so a higher
+score is better.
 """
 
 from collections.abc import Callable
 
 
 def search(
-    target_function: Callable[[float], float],
-    lower_bound: float,
-    upper_bound: float,
-) -> float:
-    """Return the x between the bounds where we think target_function is lowest."""
-    # A deliberately poor first attempt: always answer with the left edge
-    return lower_bound
+    target_function: Callable[[list[float]], float],
+    lower_bounds: list[float],
+    upper_bounds: list[float],
+) -> list[float]:
+    """Return the point within the bounds where we think target_function is lowest."""
+    # A deliberately poor first attempt: always answer with the lowest corner
+    return list(lower_bounds)

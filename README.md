@@ -70,26 +70,31 @@ by the LLM do not need to keep the docstring.
 ## Example: function minimization
 
 `examples/function_minimization/` asks for a program that finds the lowest point
-of a function of one variable. It has three files:
+of a function of one or several variables. It has three files:
 
 | File | Contents |
 |---|---|
 | `initial_program.py` | The problem description and a deliberately poor first `search` |
 | `evaluation.py` | `evaluate`, which calls the program's `search` and scores its answer |
-| `target.py` | The function to minimize and the interval to search |
+| `target.py` | The function to minimize and the region to search |
 
 Programs do not know the function in advance. `search` receives it as an
 argument, together with the bounds, and has to explore it by calling it:
 
 ```python
-def search(target_function, lower_bound, upper_bound):
+def search(target_function, lower_bounds, upper_bounds):
     ...
-    return x
+    return point
 ```
 
-So the example works for any function of one variable. To minimize a different
-one, edit `target_function`, `LOWER_BOUND` and `UPPER_BOUND` in `target.py`;
-nothing else needs to change.
+A point is **always a list of numbers**, one per variable, and the bounds are
+lists of the same length. A function of one variable is no exception: its points
+are lists holding a single number, such as `[0.5]`.
+
+So the example works for any function of any number of variables. To minimize a
+different one, edit `target_function`, `LOWER_BOUNDS` and `UPPER_BOUNDS` in
+`target.py`; nothing else needs to change. The number of variables is the length
+of the two bounds lists.
 
 ## Everyday commands
 
