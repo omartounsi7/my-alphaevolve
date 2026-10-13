@@ -1,7 +1,7 @@
 """Entry point: run this file to start my-alphaevolve on a problem.
 
 Usage:
-    python scripts/run.py INITIAL_PROGRAM EVALUATION_FILE
+    python scripts/run.py INITIAL_PROGRAM EVALUATION_FILE [--iterations N]
 """
 
 import argparse
@@ -10,6 +10,9 @@ from pathlib import Path
 from my_alphaevolve.llm import FakeLLM
 from my_alphaevolve.loop import run_my_alphaevolve
 from my_alphaevolve.problem import load_problem
+
+# How many iterations a run lasts when --iterations is not given
+DEFAULT_ITERATIONS = 10
 
 # Temporary: a prepared reply for the function-minimization example, written the
 # way the prompt asks: only code, with the explanation in comments.
@@ -43,13 +46,24 @@ def main() -> None:
         type=Path,
         help="path to the Python file defining evaluate(namespace) -> score",
     )
-    # The values the user typed, available as args.initial_program and args.evaluation_file
+    # Starting with "--" makes this one optional: it has a default and is given by name
+    parser.add_argument(
+        "--iterations",
+        type=int,
+        default=DEFAULT_ITERATIONS,
+        help=f"how many new programs to ask the LLM for (default: {DEFAULT_ITERATIONS})",
+    )
+    # The values the user typed, available as args.initial_program, args.evaluation_file
+    # and args.iterations
     args = parser.parse_args()
+    if args.iterations < 0:
+        # parser.error prints the usage message with this explanation, then stops
+        parser.error("--iterations must be 0 or more")
 
     problem = load_problem(args.initial_program, args.evaluation_file)
     # Temporary: a fake LLM with one prepared reply, until a real one is connected
     llm = FakeLLM([FAKE_REPLY])
-    database = run_my_alphaevolve(problem, llm)
+    database = run_my_alphaevolve(problem, llm, args.iterations)
 
     # Show the result of the run: the best program found and its code
     best_program = database.get_best_program()

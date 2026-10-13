@@ -102,8 +102,11 @@ These are written for Windows. On Linux and macOS, replace
 `.venv\Scripts\python.exe` with `.venv/bin/python` and every `\` with `/`.
 
 ```powershell
-# Run the program on the example problem
+# Run the program on the example problem (10 iterations by default)
 .venv\Scripts\python.exe scripts\run.py examples\function_minimization\initial_program.py examples\function_minimization\evaluation.py
+
+# The same, choosing the number of iterations
+.venv\Scripts\python.exe scripts\run.py examples\function_minimization\initial_program.py examples\function_minimization\evaluation.py --iterations 50
 
 # Run the tests
 .venv\Scripts\python.exe -m unittest discover tests
