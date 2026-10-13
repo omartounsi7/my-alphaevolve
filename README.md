@@ -8,7 +8,7 @@ scores the result, and a database keeps the programs to build on next.
 
 | Path | Contents |
 |---|---|
-| `src/my_alphaevolve/` | The algorithm's code (`Program`, `Database`, `Evaluator`, `Problem`, the loop) |
+| `src/my_alphaevolve/` | The algorithm's code (`Program`, `Database`, `Evaluator`, `Problem`, `PromptSampler`, the loop) |
 | `examples/` | Ready-made problems, one folder each |
 | `scripts/` | Files you launch directly |
 | `tests/` | Automatic checks |
@@ -42,7 +42,54 @@ As in AlphaEvolve, you describe a problem with two Python files:
   program's score as a number (higher is better). It should raise an error if
   the program breaks the problem's rules.
 
-See `examples/function_minimization/` for a complete example.
+### The initial solution must describe the problem
+
+The initial solution **must start with a docstring that describes the problem**.
+That docstring is copied into every prompt, and it is the only explanation of the
+task the LLM ever receives. The run stops with an error if it is missing.
+
+A good description says:
+
+- what the program must define (function name, arguments, return value);
+- which rules the answer must respect;
+- how the score is computed, and that higher is better.
+
+```python
+"""Problem: make answer as large as possible without exceeding 100.
+
+Define a variable called answer holding a number. The score is answer itself,
+or a failure if answer is above 100. A higher score is better.
+"""
+
+answer = 1
+```
+
+The description is read once, from the initial solution. Later programs written
+by the LLM do not need to keep the docstring.
+
+## Example: function minimization
+
+`examples/function_minimization/` asks for a program that finds the lowest point
+of a function of one variable. It has three files:
+
+| File | Contents |
+|---|---|
+| `initial_program.py` | The problem description and a deliberately poor first `search` |
+| `evaluation.py` | `evaluate`, which calls the program's `search` and scores its answer |
+| `target.py` | The function to minimize and the interval to search |
+
+Programs do not know the function in advance. `search` receives it as an
+argument, together with the bounds, and has to explore it by calling it:
+
+```python
+def search(target_function, lower_bound, upper_bound):
+    ...
+    return x
+```
+
+So the example works for any function of one variable. To minimize a different
+one, edit `target_function`, `LOWER_BOUND` and `UPPER_BOUND` in `target.py`;
+nothing else needs to change.
 
 ## Everyday commands
 
