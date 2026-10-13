@@ -8,7 +8,7 @@ scores the result, and a database keeps the programs to build on next.
 
 | Path | Contents |
 |---|---|
-| `src/my_alphaevolve/` | The algorithm's code (`Program`, `Database`, `Evaluator`, `Problem`, `PromptSampler`, the loop) |
+| `src/my_alphaevolve/` | The algorithm's code (`Program`, `Database`, `Evaluator`, `Problem`, `PromptSampler`, `LLM`, the loop) |
 | `examples/` | Ready-made problems, one folder each |
 | `scripts/` | Files you launch directly |
 | `tests/` | Automatic checks |
