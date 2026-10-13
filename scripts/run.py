@@ -12,23 +12,20 @@ from my_alphaevolve.loop import run_my_alphaevolve
 from my_alphaevolve.problem import load_problem
 
 # Temporary: a prepared reply for the function-minimization example, written the
-# way a real LLM answers: a sentence, then the program inside a code block.
+# way the prompt asks: only code, with the explanation in comments.
 # It only makes sense for that example and goes away when a real LLM is connected.
 FAKE_REPLY = """\
-Here is an improved version that tries many random points.
-
-```python
 import random
 
 
 def search(target_function, lower_bounds, upper_bounds):
+    # Improvement: instead of one fixed guess, try many random points and keep the lowest
     generator = random.Random(0)
     points = [
         [generator.uniform(low, high) for low, high in zip(lower_bounds, upper_bounds)]
         for _ in range(2000)
     ]
     return min(points, key=target_function)
-```
 """
 
 

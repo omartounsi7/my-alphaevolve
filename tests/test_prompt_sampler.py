@@ -20,9 +20,15 @@ class TestPromptSampler(unittest.TestCase):
         self.assertIn("def search():\n    return 0.1", prompt)
         self.assertIn("Score: -0.25", prompt)
 
-    def test_prompt_asks_for_a_complete_program_in_a_code_block(self) -> None:
+    def test_prompt_asks_for_only_code_with_explanations_in_comments(self) -> None:
         prompt = self.prompt_sampler.build(Program("x = 1\n", score=1.0))
-        self.assertIn("Reply with the complete new program in a code block", prompt)
+        self.assertIn("Reply with only the complete new program, as Python code.", prompt)
+        self.assertIn("put every explanation in comments inside the code", prompt)
+
+    def test_instructions_come_after_the_program(self) -> None:
+        # The last thing the LLM reads is what it is asked to produce
+        prompt = self.prompt_sampler.build(Program("x = 1\n", score=1.0))
+        self.assertLess(prompt.index("x = 1"), prompt.index("Reply with only"))
 
     def test_curly_braces_in_the_code_and_description_are_kept_as_written(self) -> None:
         # Curly braces are special in templates, but must survive in the filled-in text

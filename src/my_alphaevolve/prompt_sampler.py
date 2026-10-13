@@ -9,8 +9,7 @@ PROMPT_TEMPLATE = """\
 Problem description:
 {description}
 
-Here is a program and its score. Improve it so the score gets higher. \
-Reply with the complete new program in a code block.
+Here is a program and its score. Improve it so the score gets higher.
 
 Score: {score}
 
@@ -18,6 +17,9 @@ Program:
 ```python
 {code}
 ```
+
+Reply with only the complete new program, as Python code. Do not write any \
+text outside the code: put every explanation in comments inside the code.
 """
 
 

@@ -20,7 +20,8 @@ UNCLOSED_CODE_BLOCK_PATTERN = re.compile(r"```[^\n`]*\n(.*)", re.DOTALL)
 def extract_code(reply: str) -> str:
     """Return the program contained in an LLM's reply.
 
-    The LLM is free to write sentences around its code, so:
+    The prompt asks for code only, but an LLM does not always obey: it may wrap
+    the code in a code block or write sentences around it. So:
     - if the reply has code blocks, the longest one is the program;
     - if a code block is opened but never closed, everything after its opening is;
     - if there is no code block at all, the whole reply is.
