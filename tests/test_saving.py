@@ -158,6 +158,8 @@ class TestRunScriptOutput(unittest.TestCase):
             ],
             capture_output=True,
             text=True,
+            # The script prints in UTF-8, so its output must be read back the same way
+            encoding="utf-8",
             check=False,
         )
 

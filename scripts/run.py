@@ -5,6 +5,8 @@ Usage:
 """
 
 import argparse
+import io
+import sys
 from pathlib import Path
 
 from my_alphaevolve.llm import FakeLLM
@@ -32,8 +34,23 @@ def search(target_function, lower_bounds, upper_bounds):
 """
 
 
+def use_utf8_for_output() -> None:
+    """Make print() able to show any character, whatever the system's default is.
+
+    On Windows, output that is redirected to a file or to another program uses
+    an old encoding that lacks many characters. Printing one of them, such as an
+    arrow in a comment written by the LLM, would stop the run with an error.
+    UTF-8 is an encoding that can represent every character.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        # Only ordinary text output can be switched; anything else is left alone
+        if isinstance(stream, io.TextIOWrapper):
+            stream.reconfigure(encoding="utf-8")
+
+
 def main() -> None:
     """Read the two file paths from the command line and start the search."""
+    use_utf8_for_output()
     # Describes the arguments this script accepts; also provides --help for free
     parser = argparse.ArgumentParser(description="Evolve a program with my-alphaevolve.")
     parser.add_argument(
