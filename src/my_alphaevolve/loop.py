@@ -9,11 +9,14 @@ from my_alphaevolve.prompt_sampler import PromptSampler
 from my_alphaevolve.reply_parser import make_child_program
 
 
-def run_my_alphaevolve(problem: Problem, llm: LLM) -> None:
+def run_my_alphaevolve(problem: Problem, llm: LLM) -> Database:
     """Run the evolutionary search on the user's problem from start to finish.
 
     llm is the language model that proposes improved programs; the caller
     chooses it, so the loop works the same with a fake or a real one.
+
+    Returns the database holding every program of the run, the initial one
+    included; its get_best_program method gives the best solution found.
 
     Raises ValueError if the user's initial program fails its evaluation.
     """
@@ -33,14 +36,16 @@ def run_my_alphaevolve(problem: Problem, llm: LLM) -> None:
         raise ValueError("The initial program failed its evaluation; fix it and run again.")
     database.add(initial_program, results)
 
-    # One step of the evolution loop so far: pick a parent, write its prompt,
-    # ask the LLM for an improved program and turn its reply into a child.
+    # One complete step of evolution: pick a parent, write its prompt, ask the LLM
+    # for an improved program, turn its reply into a child, score the child and
+    # store it so that it can become a parent itself.
     parent_program = database.sample()
     prompt = prompt_sampler.build(parent_program)
     reply = llm.generate(prompt)
     child_program = make_child_program(parent_program, reply)
-    # The child is printed only until the next step, which evaluates it, exists
-    print(f"Child program: {child_program}\n{child_program.code}")
+    results = evaluator.execute(child_program)
+    # A child that failed is stored too, with the failure score
+    database.add(child_program, results)
+    print(f"Child program: {child_program}")
 
-    # results = evaluator.execute(child_program)
-    # database.add(child_program, results)
+    return database

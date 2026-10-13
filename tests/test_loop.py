@@ -8,15 +8,21 @@ import unittest
 from pathlib import Path
 from typing import Any
 
+from my_alphaevolve.database import Database
 from my_alphaevolve.llm import FakeLLM
 from my_alphaevolve.loop import run_my_alphaevolve
 from my_alphaevolve.problem import Problem
+from my_alphaevolve.program import Program
 
 # The top folder of the repository, found relative to this test file
 REPOSITORY_FOLDER = Path(__file__).parent.parent
 # The script a user launches, and the example problem it is tested with
 RUN_SCRIPT = REPOSITORY_FOLDER / "scripts" / "run.py"
 EXAMPLE_FOLDER = REPOSITORY_FOLDER / "examples" / "function_minimization"
+
+
+# A minimal valid initial program: a description, then an answer that scores 3.5
+INITIAL_CODE = '"""Make answer as large as possible."""\n\nanswer = 3.5\n'
 
 
 def read_answer(namespace: dict[str, Any]) -> float:
@@ -28,38 +34,69 @@ class TestRunMyAlphaevolve(unittest.TestCase):
     """Checks on run_my_alphaevolve, using a tiny made-up problem."""
 
     def setUp(self) -> None:
-        # Runs before every test: a fake LLM whose prompts the tests can inspect
-        self.llm = FakeLLM(["A better one:\n```python\nanswer = 4.5\n```\n"])
+        # Runs before every test: a problem whose initial program scores 3.5
+        self.problem = Problem(INITIAL_CODE, read_answer)
 
-    def run_and_capture_output(self, problem: Problem) -> str:
-        """Run the loop on a problem and return everything it printed."""
-        printed = io.StringIO()
-        # Send print() output into the printed variable instead of the screen
-        with contextlib.redirect_stdout(printed):
-            run_my_alphaevolve(problem, self.llm)
-        return printed.getvalue()
+    def run_quietly(self, problem: Problem, llm: FakeLLM) -> Database:
+        """Run the loop without showing what it prints, and return its database."""
+        # Send print() output into a throwaway variable instead of the screen
+        with contextlib.redirect_stdout(io.StringIO()):
+            return run_my_alphaevolve(problem, llm)
+
+    def child_of(self, database: Database) -> Program:
+        """Return the one program in the database that has a parent."""
+        children = [p for p in database.programs.values() if p.parent_id is not None]
+        self.assertEqual(len(children), 1)
+        return children[0]
 
     def test_llm_receives_a_prompt_with_the_description_and_the_parent_code(self) -> None:
-        code = '"""Make answer as large as possible."""\n\nanswer = 3.5\n'
-        self.run_and_capture_output(Problem(code, read_answer))
-        self.assertEqual(len(self.llm.prompts), 1)
-        prompt = self.llm.prompts[0]
+        llm = FakeLLM(["answer = 4.5\n"])
+        self.run_quietly(self.problem, llm)
+        self.assertEqual(len(llm.prompts), 1)
+        prompt = llm.prompts[0]
         self.assertIn("Problem description:\nMake answer as large as possible.", prompt)
         self.assertIn("answer = 3.5", prompt)
 
-    def test_child_made_from_the_reply_is_reported(self) -> None:
-        code = '"""Make answer as large as possible."""\n\nanswer = 3.5\n'
-        output = self.run_and_capture_output(Problem(code, read_answer))
-        # The child is one generation after the initial program and holds only the code
-        self.assertIn("generation=1", output)
-        self.assertIn("answer = 4.5", output)
-        self.assertNotIn("A better one", output)
+    def test_database_holds_the_initial_program_and_its_child(self) -> None:
+        database = self.run_quietly(self.problem, FakeLLM(["answer = 4.5\n"]))
+        self.assertEqual(len(database.programs), 2)
+        child = self.child_of(database)
+        # The child's parent is the initial program, which has no parent itself
+        parent = database.get(child.parent_id or "")
+        assert parent is not None
+        self.assertEqual(parent.code, INITIAL_CODE)
+        self.assertEqual(parent.score, 3.5)
+        self.assertEqual(child.generation, 1)
+
+    def test_child_is_evaluated_and_holds_only_the_code_of_the_reply(self) -> None:
+        llm = FakeLLM(["A better one:\n```python\nanswer = 4.5\n```\n"])
+        child = self.child_of(self.run_quietly(self.problem, llm))
+        self.assertEqual(child.code, "answer = 4.5\n")
+        self.assertEqual(child.score, 4.5)
+
+    def test_better_child_becomes_the_best_program(self) -> None:
+        database = self.run_quietly(self.problem, FakeLLM(["answer = 4.5\n"]))
+        self.assertIs(database.get_best_program(), self.child_of(database))
+
+    def test_worse_child_does_not_become_the_best_program(self) -> None:
+        database = self.run_quietly(self.problem, FakeLLM(["answer = 1.0\n"]))
+        best_program = database.get_best_program()
+        assert best_program is not None
+        self.assertEqual(best_program.code, INITIAL_CODE)
+
+    def test_failing_child_is_stored_with_the_failure_score(self) -> None:
+        # The reply is not a program at all, so its evaluation fails
+        database = self.run_quietly(self.problem, FakeLLM(["I cannot help with that."]))
+        self.assertEqual(self.child_of(database).score, float("-inf"))
+        best_program = database.get_best_program()
+        assert best_program is not None
+        self.assertEqual(best_program.code, INITIAL_CODE)
 
     def test_failing_initial_program_stops_the_run(self) -> None:
         # Valid Python with a description, but it crashes as soon as it runs
         code = '"""Make answer as large as possible."""\n\nanswer = 1 / 0\n'
         with self.assertRaises(ValueError):
-            self.run_and_capture_output(Problem(code, read_answer))
+            self.run_quietly(Problem(code, read_answer), FakeLLM(["answer = 4.5\n"]))
 
 
 class TestRunScript(unittest.TestCase):
@@ -81,7 +118,9 @@ class TestRunScript(unittest.TestCase):
         )
         # Return code 0 is how a program tells the system it finished without error
         self.assertEqual(result.returncode, 0, msg=result.stderr)
-        self.assertIn("Child program", result.stdout)
+        # The fake LLM's random search must beat the initial program and be reported
+        self.assertIn("Best program: Program(", result.stdout)
+        self.assertIn("generation=1", result.stdout)
 
     def test_missing_arguments_are_reported(self) -> None:
         result = self.launch()

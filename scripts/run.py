@@ -49,7 +49,12 @@ def main() -> None:
     problem = load_problem(args.initial_program, args.evaluation_file)
     # Temporary: a fake LLM with one prepared reply, until a real one is connected
     llm = FakeLLM([FAKE_REPLY])
-    run_my_alphaevolve(problem, llm)
+    database = run_my_alphaevolve(problem, llm)
+
+    # Show the result of the run: the best program found and its code
+    best_program = database.get_best_program()
+    if best_program is not None:
+        print(f"Best program: {best_program}\n{best_program.code}")
 
 
 # Only run main() when this file is launched directly, not when it is imported
