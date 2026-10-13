@@ -1,21 +1,19 @@
 """The evaluation criteria for the function-minimization example.
 
-The problem: find the x where target_function(x) is lowest.
+The problem: find the x, within given bounds, where a function is lowest.
+The function and the bounds are defined in target.py, next to this file.
 
-Every candidate program must define a function called search that takes no
-arguments and returns one number: its best guess for that x.
+Every candidate program must define a function called search that takes the
+function and the two bounds, and returns one number: its best guess for that x.
 """
 
 import math
 from typing import Any
 
+from target import LOWER_BOUND, UPPER_BOUND, target_function
+
 # The name of the function every program must define
 FUNCTION_NAME = "search"
-
-
-def target_function(x: float) -> float:
-    """Return the height of the bumpy curve at x; this is what we want to make small."""
-    return math.sin(3 * x) + x**2 / 10
 
 
 def evaluate(namespace: dict[str, Any]) -> float:
@@ -30,7 +28,7 @@ def evaluate(namespace: dict[str, Any]) -> float:
         raise ValueError(f"the program does not define a function called {FUNCTION_NAME}")
 
     # Call the program's function to get its answer
-    answer = namespace[FUNCTION_NAME]()
+    answer = namespace[FUNCTION_NAME](target_function, LOWER_BOUND, UPPER_BOUND)
 
     # If the returned answer is not of the correct type (for this particular problem
     # we expect a number), we raise an error.
@@ -41,6 +39,10 @@ def evaluate(namespace: dict[str, Any]) -> float:
     # Reject infinity and "not a number" (nan), which would break score comparisons
     if not math.isfinite(answer):
         raise ValueError(f"expected a finite number, got {answer}")
+
+    # The answer must lie inside the interval the program was told to search
+    if not LOWER_BOUND <= answer <= UPPER_BOUND:
+        raise ValueError(f"expected a number from {LOWER_BOUND} to {UPPER_BOUND}, got {answer}")
 
     # A lower point on the curve is a better answer, so flip the sign to get the score.
     # Higher score means better.
