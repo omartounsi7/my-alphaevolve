@@ -7,8 +7,29 @@ Usage:
 import argparse
 from pathlib import Path
 
+from my_alphaevolve.llm import FakeLLM
 from my_alphaevolve.loop import run_my_alphaevolve
 from my_alphaevolve.problem import load_problem
+
+# Temporary: a prepared reply for the function-minimization example, written the
+# way a real LLM answers: a sentence, then the program inside a code block.
+# It only makes sense for that example and goes away when a real LLM is connected.
+FAKE_REPLY = """\
+Here is an improved version that tries many random points.
+
+```python
+import random
+
+
+def search(target_function, lower_bounds, upper_bounds):
+    generator = random.Random(0)
+    points = [
+        [generator.uniform(low, high) for low, high in zip(lower_bounds, upper_bounds)]
+        for _ in range(2000)
+    ]
+    return min(points, key=target_function)
+```
+"""
 
 
 def main() -> None:
@@ -29,7 +50,9 @@ def main() -> None:
     args = parser.parse_args()
 
     problem = load_problem(args.initial_program, args.evaluation_file)
-    run_my_alphaevolve(problem)
+    # Temporary: a fake LLM with one prepared reply, until a real one is connected
+    llm = FakeLLM([FAKE_REPLY])
+    run_my_alphaevolve(problem, llm)
 
 
 # Only run main() when this file is launched directly, not when it is imported
