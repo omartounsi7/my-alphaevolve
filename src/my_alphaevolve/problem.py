@@ -65,6 +65,24 @@ class Problem:
         self.description: str = read_description(initial_code)
 
 
+def forget_modules_from_folder(folder: Path, names_imported_before: set[str]) -> None:
+    """Make Python forget the helper files that an evaluation file imported.
+
+    Python imports a file only once, then reuses it whenever the same name is
+    imported again. Without this, a second problem importing its own helper of
+    the same name (for example target.py) would silently be given the first
+    problem's helper. The evaluation function is unaffected: it keeps its own
+    link to the helpers it imported.
+
+    Only files inside folder that were not imported before are forgotten.
+    """
+    for name in set(sys.modules) - names_imported_before:
+        # The file a module was loaded from; modules built into Python have none
+        module_file = getattr(sys.modules[name], "__file__", None)
+        if module_file and Path(module_file).resolve().is_relative_to(folder):
+            del sys.modules[name]
+
+
 def load_score_function(evaluation_path: Path) -> ScoreFunction:
     """Run the user's evaluation file and return the evaluate function it defines.
 
@@ -75,16 +93,20 @@ def load_score_function(evaluation_path: Path) -> ScoreFunction:
         raise FileNotFoundError(f"no such file: {evaluation_path}")
 
     # The folder of the evaluation file, as an absolute path
-    evaluation_folder = str(evaluation_path.resolve().parent)
+    evaluation_folder = evaluation_path.resolve().parent
+    # sys.modules is Python's memory of every file imported so far, by name.
+    # Note the names it holds now, to tell afterwards which ones are new.
+    names_imported_before = set(sys.modules)
     # Let the evaluation file import helper files that sit next to it:
     # sys.path is the list of folders Python searches when it sees "import"
-    sys.path.insert(0, evaluation_folder)
+    sys.path.insert(0, str(evaluation_folder))
     try:
         # Run the evaluation file and collect every name it defines in a dictionary
         evaluation_names = runpy.run_path(str(evaluation_path))
     finally:
-        # Put the search list back as it was, whether or not the file ran cleanly
-        sys.path.remove(evaluation_folder)
+        # Put things back as they were, whether or not the file ran cleanly
+        sys.path.remove(str(evaluation_folder))
+        forget_modules_from_folder(evaluation_folder, names_imported_before)
     # None if the file does not define the required function
     score_function = evaluation_names.get(EVALUATE_FUNCTION_NAME)
     if not callable(score_function):

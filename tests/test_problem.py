@@ -111,13 +111,64 @@ class TestLoadProblem(unittest.TestCase):
             "import my_alphaevolve_test_helper\n\n"
             "def evaluate(namespace):\n    return my_alphaevolve_test_helper.VALUE\n",
         )
-        # Python remembers imported modules; forget this one once the test is over
-        self.addCleanup(sys.modules.pop, "my_alphaevolve_test_helper", None)
         search_folders_before = list(sys.path)
         load_problem(initial, evaluation)
+        # The evaluation function reaches its helper...
         self.assertEqual(load_score_function(evaluation)({}), 7.0)
-        # Loading must leave Python's list of import folders as it found it
+        # ...and loading leaves Python's import folders and import memory as it found them
         self.assertEqual(sys.path, search_folders_before)
+        self.assertNotIn("my_alphaevolve_test_helper", sys.modules)
+
+    def test_two_problems_can_each_have_a_helper_with_the_same_name(self) -> None:
+        score_functions = []
+        for value in (1.0, 2.0):
+            # One sub-folder per problem, each with its own my_alphaevolve_test_helper.py
+            folder = self.folder / f"problem_{value}"
+            folder.mkdir()
+            (folder / "my_alphaevolve_test_helper.py").write_text(
+                f"VALUE = {value}\n", encoding="utf-8"
+            )
+            (folder / "evaluation.py").write_text(
+                "from my_alphaevolve_test_helper import VALUE\n\n"
+                "def evaluate(namespace):\n    return VALUE\n",
+                encoding="utf-8",
+            )
+            score_functions.append(load_score_function(folder / "evaluation.py"))
+        # Each problem must be scored with its own helper, not the first one loaded
+        self.assertEqual(score_functions[0]({}), 1.0)
+        self.assertEqual(score_functions[1]({}), 2.0)
+
+    def test_helper_used_while_evaluating_still_works_after_being_forgotten(self) -> None:
+        # Here evaluate reaches into the helper at the moment it is called, long after loading
+        self.write_file("my_alphaevolve_test_helper.py", "def double(x):\n    return 2 * x\n")
+        evaluation = self.write_file(
+            "evaluation.py",
+            "import my_alphaevolve_test_helper\n\n"
+            "def evaluate(namespace):\n"
+            "    return my_alphaevolve_test_helper.double(namespace['answer'])\n",
+        )
+        score_function = load_score_function(evaluation)
+        self.assertNotIn("my_alphaevolve_test_helper", sys.modules)
+        self.assertEqual(score_function({"answer": 21}), 42)
+
+    def test_modules_imported_before_loading_are_not_forgotten(self) -> None:
+        # The evaluation file imports json, which Python already knows; it must stay known
+        import json
+
+        evaluation = self.write_file(
+            "evaluation.py", "import json\n\ndef evaluate(namespace):\n    return 0.0\n"
+        )
+        load_score_function(evaluation)
+        self.assertIs(sys.modules["json"], json)
+
+    def test_helpers_are_forgotten_even_when_the_evaluation_file_crashes(self) -> None:
+        self.write_file("my_alphaevolve_test_helper.py", "VALUE = 7.0\n")
+        evaluation = self.write_file(
+            "evaluation.py", "import my_alphaevolve_test_helper\n\nresult = 1 / 0\n"
+        )
+        with self.assertRaises(ZeroDivisionError):
+            load_score_function(evaluation)
+        self.assertNotIn("my_alphaevolve_test_helper", sys.modules)
 
 
 if __name__ == "__main__":
