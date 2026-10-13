@@ -29,7 +29,7 @@ class TestRunMyAlphaevolve(unittest.TestCase):
 
     def setUp(self) -> None:
         # Runs before every test: a fake LLM whose prompts the tests can inspect
-        self.llm = FakeLLM(["a prepared reply"])
+        self.llm = FakeLLM(["A better one:\n```python\nanswer = 4.5\n```\n"])
 
     def run_and_capture_output(self, problem: Problem) -> str:
         """Run the loop on a problem and return everything it printed."""
@@ -39,11 +39,6 @@ class TestRunMyAlphaevolve(unittest.TestCase):
             run_my_alphaevolve(problem, self.llm)
         return printed.getvalue()
 
-    def test_reports_the_score_of_a_valid_initial_program(self) -> None:
-        code = '"""Make answer as large as possible."""\n\nanswer = 3.5\n'
-        output = self.run_and_capture_output(Problem(code, read_answer))
-        self.assertIn("score=3.5", output)
-
     def test_llm_receives_a_prompt_with_the_description_and_the_parent_code(self) -> None:
         code = '"""Make answer as large as possible."""\n\nanswer = 3.5\n'
         self.run_and_capture_output(Problem(code, read_answer))
@@ -52,10 +47,13 @@ class TestRunMyAlphaevolve(unittest.TestCase):
         self.assertIn("Problem description:\nMake answer as large as possible.", prompt)
         self.assertIn("answer = 3.5", prompt)
 
-    def test_reply_from_the_llm_is_reported(self) -> None:
+    def test_child_made_from_the_reply_is_reported(self) -> None:
         code = '"""Make answer as large as possible."""\n\nanswer = 3.5\n'
         output = self.run_and_capture_output(Problem(code, read_answer))
-        self.assertIn("a prepared reply", output)
+        # The child is one generation after the initial program and holds only the code
+        self.assertIn("generation=1", output)
+        self.assertIn("answer = 4.5", output)
+        self.assertNotIn("A better one", output)
 
     def test_failing_initial_program_stops_the_run(self) -> None:
         # Valid Python with a description, but it crashes as soon as it runs
@@ -83,7 +81,7 @@ class TestRunScript(unittest.TestCase):
         )
         # Return code 0 is how a program tells the system it finished without error
         self.assertEqual(result.returncode, 0, msg=result.stderr)
-        self.assertIn("Best program so far", result.stdout)
+        self.assertIn("Child program", result.stdout)
 
     def test_missing_arguments_are_reported(self) -> None:
         result = self.launch()
