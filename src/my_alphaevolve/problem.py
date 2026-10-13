@@ -2,7 +2,9 @@
 
 As in AlphaEvolve, the user supplies two things, each as a Python file:
 
-- an initial solution: the program that evolution starts from;
+- an initial solution: the program that evolution starts from. It must begin
+  with a docstring describing the problem, because that text is what tells
+  the LLM what it is being asked to improve;
 - the evaluation criteria: a file defining a function called evaluate, which
   receives every name a candidate program defined (a dictionary) and returns
   that program's score (a number, higher is better).
@@ -10,6 +12,7 @@ As in AlphaEvolve, the user supplies two things, each as a Python file:
 Nothing in this file is specific to any one problem.
 """
 
+import ast
 import runpy
 import sys
 from collections.abc import Callable
@@ -24,21 +27,48 @@ ScoreFunction = Callable[[dict[str, Any]], float]
 EVALUATE_FUNCTION_NAME = "evaluate"
 
 
+def read_description(initial_code: str) -> str:
+    """Return the problem description: the docstring at the top of the initial program.
+
+    Raises ValueError if the code is not valid Python or has no such docstring.
+    """
+    try:
+        # ast.parse reads code into a structure Python can inspect, without running it
+        parsed_code = ast.parse(initial_code)
+    except SyntaxError as error:
+        raise ValueError(f"The initial program is not valid Python: {error}") from error
+    # The text of the docstring that opens the file, or None if there is none
+    description = ast.get_docstring(parsed_code)
+    if not description:
+        raise ValueError(
+            "The initial program must start with a docstring that describes the problem."
+        )
+    return description
+
+
 class Problem:
     """One problem to solve: an initial solution plus a way to score solutions."""
 
     def __init__(self, initial_code: str, score_function: ScoreFunction) -> None:
+        """Store the user's inputs.
+
+        Raises ValueError if initial_code does not start with a docstring
+        describing the problem.
+        """
         # The source code of the starting program, as text
         self.initial_code: str = initial_code
         # The user's function that turns a finished run of a program into a score
         self.score_function: ScoreFunction = score_function
+        # What the problem is, in plain words; shown to the LLM in every prompt
+        self.description: str = read_description(initial_code)
 
 
 def load_problem(initial_program_path: Path, evaluation_path: Path) -> Problem:
     """Build a Problem from the two files the user provides.
 
     Raises FileNotFoundError if a file is missing, and ValueError if the
-    evaluation file does not define a function called evaluate.
+    evaluation file does not define a function called evaluate or the initial
+    program does not start with a docstring describing the problem.
     """
     # Check both files up front, so a wrong path gives a clear message
     for path in (initial_program_path, evaluation_path):
