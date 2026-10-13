@@ -32,6 +32,64 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -e ".[dev]"
 ```
 
+## Choosing the LLM
+
+The LLM is reached through the "OpenAI-compatible" interface, which is offered
+both by [Ollama](https://ollama.com), for models running on your own machine,
+and by most cloud providers. Three options select it:
+
+| Option | Meaning | Default |
+|---|---|---|
+| `--model` | Name of the model, as its server knows it. Required. | none |
+| `--llm-url` | Address of the server | `http://localhost:11434/v1`, a local Ollama |
+| `--api-key-env` | Name of the environment variable holding your API key | `OPENAI_API_KEY` |
+
+### A local model with Ollama
+
+Install Ollama, download a model once, and name it with `--model`. No API key
+is needed, and running costs nothing.
+
+```bash
+ollama pull qwen2.5-coder:3b
+```
+
+```powershell
+.venv\Scripts\python.exe scripts\run.py examples\function_minimization\initial_program.py examples\function_minimization\evaluation.py --model qwen2.5-coder:3b
+```
+
+Ollama cuts prompts that are longer than its context length without warning.
+The prompts of this project are short today; if you make them longer, raise
+that limit in Ollama's settings.
+
+### A model in the cloud
+
+Give the provider's address and model name, and put your API key in an
+environment variable. The key is a secret: never write it in a file of this
+repository or on the command line.
+
+```powershell
+# Windows (PowerShell): set the key for this terminal window only
+$env:OPENAI_API_KEY = "paste-your-key-here"
+.venv\Scripts\python.exe scripts\run.py examples\function_minimization\initial_program.py examples\function_minimization\evaluation.py --model NAME-OF-THE-MODEL --llm-url https://ADDRESS-OF-THE-PROVIDER/v1
+```
+
+```bash
+# Linux and macOS
+export OPENAI_API_KEY="paste-your-key-here"
+.venv/bin/python scripts/run.py examples/function_minimization/initial_program.py examples/function_minimization/evaluation.py --model NAME-OF-THE-MODEL --llm-url https://ADDRESS-OF-THE-PROVIDER/v1
+```
+
+Cloud models cost money for every request. Each iteration is one request, so
+`--iterations` bounds the cost of a run, and `--max-reply-tokens` (4096 by
+default, 0 for no limit) bounds the length of each reply. Set a spending limit
+with your provider as well.
+
+### When the LLM does not answer
+
+A request that fails for a passing reason is tried again twice. If it still
+fails, that iteration is skipped. After three skipped iterations in a row the
+run stops, keeping what it has found.
+
 ## Defining a problem
 
 As in AlphaEvolve, you describe a problem with two Python files:
@@ -156,19 +214,20 @@ not above that point.
 
 These are written for Windows. On Linux and macOS, replace
 `.venv\Scripts\python.exe` with `.venv/bin/python` and every `\` with `/`.
+The run commands use a local Ollama model; see "Choosing the LLM" for others.
 
 ```powershell
 # Run the program on the example problem (10 iterations by default)
-.venv\Scripts\python.exe scripts\run.py examples\function_minimization\initial_program.py examples\function_minimization\evaluation.py
+.venv\Scripts\python.exe scripts\run.py examples\function_minimization\initial_program.py examples\function_minimization\evaluation.py --model qwen2.5-coder:3b
 
 # The same, choosing the number of iterations
-.venv\Scripts\python.exe scripts\run.py examples\function_minimization\initial_program.py examples\function_minimization\evaluation.py --iterations 50
+.venv\Scripts\python.exe scripts\run.py examples\function_minimization\initial_program.py examples\function_minimization\evaluation.py --model qwen2.5-coder:3b --iterations 50
 
 # The same, saved in a folder; launch it again to continue the run for 50 more iterations
-.venv\Scripts\python.exe scripts\run.py examples\function_minimization\initial_program.py examples\function_minimization\evaluation.py --iterations 50 --output runs\function_minimization
+.venv\Scripts\python.exe scripts\run.py examples\function_minimization\initial_program.py examples\function_minimization\evaluation.py --model qwen2.5-coder:3b --iterations 50 --output runs\function_minimization
 
 # The same, stopping any program that runs for more than 5 seconds
-.venv\Scripts\python.exe scripts\run.py examples\function_minimization\initial_program.py examples\function_minimization\evaluation.py --timeout 5
+.venv\Scripts\python.exe scripts\run.py examples\function_minimization\initial_program.py examples\function_minimization\evaluation.py --model qwen2.5-coder:3b --timeout 5
 
 # Run the tests
 .venv\Scripts\python.exe -m unittest discover tests

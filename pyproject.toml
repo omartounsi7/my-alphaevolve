@@ -11,8 +11,10 @@ version = "0.1.0"
 description = "A minimal, from-scratch implementation of the AlphaEvolve algorithm"
 readme = "README.md"
 requires-python = ">=3.10"
-# Third-party packages the code needs to run; none yet
-dependencies = []
+# Third-party packages the code needs to run
+dependencies = [
+    "openai>=1.0",  # talks to LLM servers that offer the OpenAI-compatible interface
+]
 
 [project.optional-dependencies]
 # Tools needed only while developing; installed with: pip install -e ".[dev]"

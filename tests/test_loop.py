@@ -2,6 +2,7 @@
 
 import contextlib
 import io
+import os
 import random
 import subprocess
 import sys
@@ -10,10 +11,12 @@ import unittest
 from pathlib import Path
 from typing import Any
 
+from fake_llm_server import FakeLLMServer
+
 from my_alphaevolve.database import Database
 from my_alphaevolve.evaluator import InProcessEvaluator
-from my_alphaevolve.llm import FakeLLM
-from my_alphaevolve.loop import run_my_alphaevolve
+from my_alphaevolve.llm import LLM, FakeLLM, LLMError
+from my_alphaevolve.loop import MAX_LLM_FAILURES_IN_A_ROW, run_my_alphaevolve
 from my_alphaevolve.problem import Problem
 from my_alphaevolve.program import Program
 
@@ -22,6 +25,21 @@ REPOSITORY_FOLDER = Path(__file__).parent.parent
 # The script a user launches, and the example problem it is tested with
 RUN_SCRIPT = REPOSITORY_FOLDER / "scripts" / "run.py"
 EXAMPLE_FOLDER = REPOSITORY_FOLDER / "examples" / "function_minimization"
+
+# What the stand-in LLM server answers in the script tests: a program for the
+# function-minimization example that tries many random points and keeps the lowest
+RANDOM_SEARCH_REPLY = """\
+import random
+
+
+def search(target_function, lower_bounds, upper_bounds):
+    generator = random.Random(0)
+    points = [
+        [generator.uniform(low, high) for low, high in zip(lower_bounds, upper_bounds)]
+        for _ in range(2000)
+    ]
+    return min(points, key=target_function)
+"""
 
 
 # A minimal valid initial program: a description, then an answer that scores 3.5
@@ -33,6 +51,25 @@ def read_answer(namespace: dict[str, Any]) -> float:
     return float(namespace["answer"])
 
 
+class UnreliableLLM(LLM):
+    """A fake LLM that fails on chosen calls, as a real one does when the network drops."""
+
+    def __init__(self, reply: str, failing_calls: set[int]) -> None:
+        # The reply given to every call that does not fail
+        self.reply: str = reply
+        # Which calls fail: 1 for the first, 2 for the second, ...
+        self.failing_calls: set[int] = failing_calls
+        # How many calls have been made so far
+        self.calls: int = 0
+
+    def generate(self, prompt: str) -> str:
+        """Return the reply, or raise LLMError on the chosen calls."""
+        self.calls += 1
+        if self.calls in self.failing_calls:
+            raise LLMError("prepared failure")
+        return self.reply
+
+
 class TestRunMyAlphaevolve(unittest.TestCase):
     """Checks on run_my_alphaevolve, using a tiny made-up problem."""
 
@@ -40,7 +77,7 @@ class TestRunMyAlphaevolve(unittest.TestCase):
         # Runs before every test: a problem whose initial program scores 3.5
         self.problem = Problem(INITIAL_CODE)
 
-    def run_quietly(self, problem: Problem, llm: FakeLLM, iterations: int = 1) -> Database:
+    def run_quietly(self, problem: Problem, llm: LLM, iterations: int = 1) -> Database:
         """Run the loop without showing what it prints, and return its database."""
         # Send print() output into a throwaway variable instead of the screen
         with contextlib.redirect_stdout(io.StringIO()):
@@ -142,11 +179,48 @@ class TestRunMyAlphaevolve(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.run_quietly(Problem(code), FakeLLM(["answer = 4.5\n"]))
 
+    def test_iteration_without_a_reply_is_skipped_and_the_run_carries_on(self) -> None:
+        # The LLM fails on its second call only
+        llm = UnreliableLLM("answer = 4.5\n", failing_calls={2})
+        database = self.run_quietly(self.problem, llm, iterations=4)
+        self.assertEqual(llm.calls, 4)
+        # Three children plus the initial program: iteration 2 produced nothing
+        self.assertEqual(len(database.programs), 4)
+        iterations_with_a_child = sorted(p.iteration for p in database.programs.values())
+        self.assertEqual(iterations_with_a_child, [0, 1, 3, 4])
+
+    def test_run_stops_when_the_llm_keeps_failing(self) -> None:
+        # The LLM fails on every call from the second one on
+        llm = UnreliableLLM("answer = 4.5\n", failing_calls=set(range(2, 100)))
+        database = self.run_quietly(self.problem, llm, iterations=50)
+        # One success, then three failures in a row end the run: 4 calls, not 50
+        self.assertEqual(llm.calls, 1 + MAX_LLM_FAILURES_IN_A_ROW)
+        self.assertEqual(len(database.programs), 2)
+
+    def test_failures_that_are_not_in_a_row_do_not_stop_the_run(self) -> None:
+        # Every other call fails: never three in a row
+        llm = UnreliableLLM("answer = 4.5\n", failing_calls=set(range(1, 100, 2)))
+        self.run_quietly(self.problem, llm, iterations=10)
+        self.assertEqual(llm.calls, 10)
+
 
 class TestRunScript(unittest.TestCase):
-    """Checks on scripts/run.py, launched the way a user would launch it."""
+    """Checks on scripts/run.py, launched the way a user would launch it.
 
-    def launch(self, *arguments: str) -> subprocess.CompletedProcess[str]:
+    The script talks to a stand-in LLM server started by each test, so the
+    whole path is exercised: the real LLM class, the real evaluator, the loop.
+    """
+
+    def setUp(self) -> None:
+        # Runs before every test: a stand-in LLM server, stopped after the test
+        self.server = FakeLLMServer([RANDOM_SEARCH_REPLY])
+        self.addCleanup(self.server.stop)
+
+    def launch(
+        self,
+        *arguments: str,
+        environment: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
         """Run the script in a separate Python process and return its result."""
         return subprocess.run(
             [sys.executable, str(RUN_SCRIPT), *arguments],
@@ -155,32 +229,72 @@ class TestRunScript(unittest.TestCase):
             # The script prints in UTF-8, so its output must be read back the same way
             encoding="utf-8",
             check=False,
+            # None means "the same environment variables as this process"
+            env=environment,
+        )
+
+    def launch_example(
+        self,
+        *arguments: str,
+        environment: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        """Run the script on the example problem, using the stand-in LLM server."""
+        return self.launch(
+            str(EXAMPLE_FOLDER / "initial_program.py"),
+            str(EXAMPLE_FOLDER / "evaluation.py"),
+            "--model",
+            "test-model",
+            "--llm-url",
+            self.server.url,
+            *arguments,
+            environment=environment,
         )
 
     def test_runs_the_example_problem(self) -> None:
-        result = self.launch(
-            str(EXAMPLE_FOLDER / "initial_program.py"),
-            str(EXAMPLE_FOLDER / "evaluation.py"),
-        )
+        result = self.launch_example("--iterations", "2")
         # Return code 0 is how a program tells the system it finished without error
         self.assertEqual(result.returncode, 0, msg=result.stderr)
-        # The fake LLM's random search must beat the initial program and be reported
+        # The server's random search must beat the initial program and be reported
         self.assertIn("Best program: Program(", result.stdout)
         self.assertIn("generation=1", result.stdout)
 
-    def test_iterations_option_sets_the_length_of_the_run(self) -> None:
-        result = self.launch(
-            str(EXAMPLE_FOLDER / "initial_program.py"),
-            str(EXAMPLE_FOLDER / "evaluation.py"),
-            "--iterations",
-            "3",
+    def test_llm_is_asked_with_the_chosen_model_and_a_prompt_about_the_problem(self) -> None:
+        self.launch_example("--iterations", "1")
+        self.assertEqual(len(self.server.requests), 1)
+        body = self.server.requests[0]["body"]
+        self.assertEqual(body["model"], "test-model")
+        self.assertIn("lower_bounds", body["messages"][0]["content"])
+
+    def test_api_key_is_read_from_the_chosen_environment_variable(self) -> None:
+        # os.environ holds this process's environment variables; add one for the script
+        environment = dict(os.environ, MY_TEST_KEY="secret-from-the-environment")
+        self.launch_example(
+            "--iterations", "1", "--api-key-env", "MY_TEST_KEY", environment=environment
         )
+        authorization = self.server.requests[0]["authorization"]
+        self.assertEqual(authorization, "Bearer secret-from-the-environment")
+
+    def test_api_key_never_appears_in_the_output(self) -> None:
+        environment = dict(os.environ, MY_TEST_KEY="secret-from-the-environment")
+        result = self.launch_example(
+            "--iterations", "1", "--api-key-env", "MY_TEST_KEY", environment=environment
+        )
+        self.assertNotIn("secret-from-the-environment", result.stdout + result.stderr)
+
+    def test_reply_limit_option_is_sent_and_zero_removes_it(self) -> None:
+        self.launch_example("--iterations", "1", "--max-reply-tokens", "77")
+        self.launch_example("--iterations", "1", "--max-reply-tokens", "0")
+        self.assertEqual(self.server.requests[0]["body"]["max_tokens"], 77)
+        self.assertNotIn("max_tokens", self.server.requests[1]["body"])
+
+    def test_iterations_option_sets_the_length_of_the_run(self) -> None:
+        result = self.launch_example("--iterations", "3")
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         self.assertIn("Iteration 3/3", result.stdout)
         self.assertNotIn("Iteration 4", result.stdout)
 
     def test_characters_outside_the_system_encoding_are_printed(self) -> None:
-        # A problem whose initial program has an arrow in it. The fake LLM's reply
+        # A problem whose initial program has an arrow in it. The server's reply
         # fails here, so the initial program stays the best and its code is printed.
         with tempfile.TemporaryDirectory() as folder_name:
             folder = Path(folder_name)
@@ -197,21 +311,33 @@ class TestRunScript(unittest.TestCase):
                 "    return float(namespace['answer'])\n",
                 encoding="utf-8",
             )
-            result = self.launch(str(initial), str(evaluation), "--iterations", "1")
+            result = self.launch(
+                str(initial),
+                str(evaluation),
+                "--model",
+                "test-model",
+                "--llm-url",
+                self.server.url,
+                "--iterations",
+                "1",
+            )
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         # Both the failure message and the best program's code hold such a character
         self.assertIn("answer must be ≥ 0", result.stdout)
         self.assertIn("# small → large", result.stdout)
 
     def test_negative_iterations_are_reported(self) -> None:
+        result = self.launch_example("--iterations", "-1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--iterations must be 0 or more", result.stderr)
+
+    def test_missing_model_is_reported(self) -> None:
         result = self.launch(
             str(EXAMPLE_FOLDER / "initial_program.py"),
             str(EXAMPLE_FOLDER / "evaluation.py"),
-            "--iterations",
-            "-1",
         )
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("--iterations must be 0 or more", result.stderr)
+        self.assertIn("--model", result.stderr)
 
     def test_missing_arguments_are_reported(self) -> None:
         result = self.launch()

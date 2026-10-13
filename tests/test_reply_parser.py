@@ -42,6 +42,19 @@ class TestExtractCode(unittest.TestCase):
         code = "def f():\n    a = 1\n\n    return a\n"
         self.assertEqual(extract_code(f"{FENCE}python\n{code}{FENCE}"), code)
 
+    def test_reasoning_of_a_thinking_model_is_dropped(self) -> None:
+        # Some models write their reasoning first, between <think> and </think>
+        reply = "<think>\nMaybe x = 5? No, too big.\n</think>\n\nx = 1\ny = 2\n"
+        self.assertEqual(extract_code(reply), "x = 1\ny = 2\n")
+
+    def test_code_block_inside_the_reasoning_is_not_taken_for_the_program(self) -> None:
+        # The discarded attempt is longer than the answer, and must still lose
+        reply = (
+            f"<think>\nFirst idea:\n{FENCE}python\nx = 100\ny = 200\nz = 300\n{FENCE}\n</think>\n"
+            f"{FENCE}python\nx = 1\n{FENCE}\n"
+        )
+        self.assertEqual(extract_code(reply), "x = 1\n")
+
     def test_empty_reply_gives_an_empty_program(self) -> None:
         self.assertEqual(extract_code(""), "\n")
 

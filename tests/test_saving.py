@@ -9,6 +9,8 @@ import unittest
 from pathlib import Path
 from typing import Any
 
+from fake_llm_server import FakeLLMServer
+
 from my_alphaevolve.database import Database
 from my_alphaevolve.evaluator import InProcessEvaluator
 from my_alphaevolve.llm import LLM, FakeLLM
@@ -152,6 +154,12 @@ class TestSavingARun(unittest.TestCase):
 class TestRunScriptOutput(unittest.TestCase):
     """Checks on the --output option of scripts/run.py."""
 
+    def setUp(self) -> None:
+        # Runs before every test: a stand-in LLM server, stopped after the test.
+        # Any reply will do here: these tests are about files, not about scores.
+        self.server = FakeLLMServer(["def search(f, low, high):\n    return list(high)\n"])
+        self.addCleanup(self.server.stop)
+
     def launch(self, output_folder: Path, iterations: int) -> subprocess.CompletedProcess[str]:
         """Run the script on the example problem in a separate Python process."""
         return subprocess.run(
@@ -160,6 +168,10 @@ class TestRunScriptOutput(unittest.TestCase):
                 str(RUN_SCRIPT),
                 str(EXAMPLE_FOLDER / "initial_program.py"),
                 str(EXAMPLE_FOLDER / "evaluation.py"),
+                "--model",
+                "test-model",
+                "--llm-url",
+                self.server.url,
                 "--iterations",
                 str(iterations),
                 "--output",

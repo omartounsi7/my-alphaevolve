@@ -4,12 +4,16 @@ from pathlib import Path
 
 from my_alphaevolve.database import Database
 from my_alphaevolve.evaluator import Evaluator
-from my_alphaevolve.llm import LLM
+from my_alphaevolve.llm import LLM, LLMError
 from my_alphaevolve.problem import Problem
 from my_alphaevolve.program import Program
 from my_alphaevolve.prompt_sampler import PromptSampler
 from my_alphaevolve.reply_parser import make_child_program
 from my_alphaevolve.storage import RunStorage
+
+# After this many iterations in a row without a reply from the LLM, the run stops:
+# the LLM is probably unreachable, and what was found so far is worth keeping
+MAX_LLM_FAILURES_IN_A_ROW = 3
 
 
 def run_my_alphaevolve(
@@ -36,6 +40,9 @@ def run_my_alphaevolve(
     None means nothing is saved.
 
     The run can be stopped early with Ctrl+C; what was done until then is kept.
+
+    An iteration in which the LLM gives no reply is skipped. After
+    MAX_LLM_FAILURES_IN_A_ROW such iterations in a row, the run stops early.
 
     Returns the database holding every program of the run, the initial one
     included; its get_best_program method gives the best solution found.
@@ -81,6 +88,8 @@ def run_my_alphaevolve(
 
     # The number of the last iteration of this session
     last_iteration = first_iteration + iterations - 1
+    # How many iterations in a row just ended without a reply from the LLM
+    llm_failures_in_a_row = 0
 
     try:
         # The evolution loop. range(a, b + 1) counts a, a + 1, ..., b
@@ -90,7 +99,21 @@ def run_my_alphaevolve(
             # and store it so that it can become a parent in a later iteration.
             parent_program = database.sample()
             prompt = prompt_sampler.build(parent_program)
-            reply = llm.generate(prompt)
+            try:
+                reply = llm.generate(prompt)
+            except LLMError as error:
+                # No reply this time (network trouble, a busy server...): this
+                # iteration produces no child, and the run carries on
+                llm_failures_in_a_row += 1
+                print(f"Iteration {iteration}/{last_iteration}: skipped, no reply ({error})")
+                if llm_failures_in_a_row >= MAX_LLM_FAILURES_IN_A_ROW:
+                    # The LLM seems to be unreachable: going on would only repeat the failure
+                    print(f"The LLM failed {llm_failures_in_a_row} times in a row; stopping.")
+                    # break leaves the for loop at once
+                    break
+                # continue skips the rest of this iteration and moves on to the next one
+                continue
+            llm_failures_in_a_row = 0
             child_program = make_child_program(parent_program, reply, iteration)
             results = evaluator.execute(child_program)
             # A child that failed is stored too, with the failure score

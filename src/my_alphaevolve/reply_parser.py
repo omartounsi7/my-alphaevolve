@@ -16,6 +16,10 @@ CODE_BLOCK_PATTERN = re.compile(r"```[^\n`]*\n(.*?)```", re.DOTALL)
 # The same, for a block that is opened but never closed (a reply that was cut short)
 UNCLOSED_CODE_BLOCK_PATTERN = re.compile(r"```[^\n`]*\n(.*)", re.DOTALL)
 
+# Some models write their reasoning before the answer, between <think> and </think>.
+# It is not part of the program, and may even contain code they then discard.
+THINKING_PATTERN = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+
 
 def extract_code(reply: str) -> str:
     """Return the program contained in an LLM's reply.
@@ -26,6 +30,8 @@ def extract_code(reply: str) -> str:
     - if a code block is opened but never closed, everything after its opening is;
     - if there is no code block at all, the whole reply is.
     """
+    # Drop the reasoning that "thinking" models write before their answer
+    reply = THINKING_PATTERN.sub("", reply)
     # The contents of every complete code block, in the order they appear
     code_blocks: list[str] = CODE_BLOCK_PATTERN.findall(reply)
     if code_blocks:
