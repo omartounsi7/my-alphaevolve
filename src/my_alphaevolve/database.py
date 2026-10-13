@@ -23,11 +23,16 @@ class Database:
         self,
         archive_size: int = DEFAULT_ARCHIVE_SIZE,
         exploitation_ratio: float = DEFAULT_EXPLOITATION_RATIO,
+        seed: int | None = None,
     ) -> None:
         """Create an empty database.
 
         archive_size and exploitation_ratio tune how sample picks parents;
         see the sample method.
+
+        seed fixes the sequence of random picks made by sample, so that the
+        choice of parents can be repeated exactly; None gives a different
+        sequence every time.
 
         Raises ValueError if archive_size is below 1 or exploitation_ratio is
         not between 0 and 1.
@@ -42,6 +47,10 @@ class Database:
         self.archive_size: int = archive_size
         # The share of parents, from 0 to 1, that sample takes from the archive
         self.exploitation_ratio: float = exploitation_ratio
+        # This database's own source of randomness. The random module also offers a
+        # shared one, but any other code can reset that with random.seed(), which
+        # would make the choice of parents repeat itself.
+        self.random_generator: random.Random = random.Random(seed)
 
     def add(self, program: Program, results: float) -> None:
         """Store a program and its score under its id."""
@@ -98,13 +107,13 @@ class Database:
         working_programs = self.get_working_programs()
         if not working_programs:
             # Nothing has ever worked: any program is as good a parent as another
-            return random.choice(list(self.programs.values()))
+            return self.random_generator.choice(list(self.programs.values()))
 
-        # random.random() gives a number from 0 up to 1, so it falls below
+        # random() gives a number from 0 up to 1, so it falls below
         # exploitation_ratio exactly that share of the time
-        if random.random() < self.exploitation_ratio:
-            return random.choice(self.get_top_programs(self.archive_size))
-        return random.choice(working_programs)
+        if self.random_generator.random() < self.exploitation_ratio:
+            return self.random_generator.choice(self.get_top_programs(self.archive_size))
+        return self.random_generator.choice(working_programs)
 
     def get_best_program(self) -> Program | None:
         """Return the highest-scoring program (None if the database is empty)."""

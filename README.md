@@ -187,6 +187,11 @@ with one of two strategies, chosen at random each time:
 Programs whose evaluation failed are kept in the database and in the saved run,
 but are never chosen as parents.
 
+The choices are random and differ from run to run. Add `--seed` with a whole
+number, for example `--seed 7`, to get the same choices again. This repeats the
+choice of parents only: an LLM rarely gives the same reply twice, so two runs
+with the same seed still drift apart.
+
 ## Saving, stopping and continuing a run
 
 Add `--output` with a folder name to save a run. The folder then holds:

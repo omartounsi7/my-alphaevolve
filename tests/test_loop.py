@@ -3,7 +3,6 @@
 import contextlib
 import io
 import os
-import random
 import subprocess
 import sys
 import tempfile
@@ -82,7 +81,19 @@ class TestRunMyAlphaevolve(unittest.TestCase):
         # Send print() output into a throwaway variable instead of the screen
         with contextlib.redirect_stdout(io.StringIO()):
             # Programs are scored inside this process: fast, and fine for trusted test code
-            return run_my_alphaevolve(problem, llm, InProcessEvaluator(read_answer), iterations)
+            # seed=0 makes the random choice of parents the same on every test run
+            return run_my_alphaevolve(
+                problem, llm, InProcessEvaluator(read_answer), iterations, seed=0
+            )
+
+    def parent_positions(self, database: Database) -> list[int]:
+        """Return, for each child in order, the position of its parent in the database."""
+        program_ids = list(database.programs)
+        return [
+            program_ids.index(program.parent_id)
+            for program in database.programs.values()
+            if program.parent_id is not None
+        ]
 
     def child_of(self, database: Database) -> Program:
         """Return the one program in the database that has a parent."""
@@ -158,15 +169,25 @@ class TestRunMyAlphaevolve(unittest.TestCase):
         self.assertEqual(best_program.score, 9.0)
 
     def test_children_can_become_parents(self) -> None:
-        # Parents are picked at random; fixing the seed makes the picks repeatable
-        random.seed(0)
         database = self.run_quietly(self.problem, FakeLLM(["answer = 4.5\n"]), iterations=30)
         deepest_generation = max(program.generation for program in database.programs.values())
         # A generation above 1 means some child was itself made from a child
         self.assertGreater(deepest_generation, 1)
 
+    def test_same_seed_gives_the_same_choice_of_parents(self) -> None:
+        first = self.run_quietly(self.problem, FakeLLM(["answer = 4.5\n"]), iterations=30)
+        second = self.run_quietly(self.problem, FakeLLM(["answer = 4.5\n"]), iterations=30)
+        self.assertEqual(self.parent_positions(first), self.parent_positions(second))
+
+    def test_program_calling_random_seed_does_not_change_the_choice_of_parents(self) -> None:
+        # Search code written by an LLM often seeds the shared random generator.
+        # Here the programs even run inside this process, the worst case.
+        seeding_reply = "import random\nrandom.seed(0)\nanswer = 4.5\n"
+        normal = self.run_quietly(self.problem, FakeLLM(["answer = 4.5\n"]), iterations=30)
+        seeding = self.run_quietly(self.problem, FakeLLM([seeding_reply]), iterations=30)
+        self.assertEqual(self.parent_positions(normal), self.parent_positions(seeding))
+
     def test_later_prompts_show_the_code_of_earlier_children(self) -> None:
-        random.seed(0)
         llm = FakeLLM(["answer = 4.5\n"])
         self.run_quietly(self.problem, llm, iterations=30)
         # The first prompt can only show the initial program; a later one shows a child
@@ -286,6 +307,11 @@ class TestRunScript(unittest.TestCase):
         self.launch_example("--iterations", "1", "--max-reply-tokens", "0")
         self.assertEqual(self.server.requests[0]["body"]["max_tokens"], 77)
         self.assertNotIn("max_tokens", self.server.requests[1]["body"])
+
+    def test_seed_option_is_accepted(self) -> None:
+        result = self.launch_example("--iterations", "2", "--seed", "7")
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertIn("Iteration 2/2", result.stdout)
 
     def test_iterations_option_sets_the_length_of_the_run(self) -> None:
         result = self.launch_example("--iterations", "3")

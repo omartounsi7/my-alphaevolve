@@ -22,6 +22,7 @@ def run_my_alphaevolve(
     evaluator: Evaluator,
     iterations: int,
     output_folder: Path | None = None,
+    seed: int | None = None,
 ) -> Database:
     """Run the evolutionary search on the user's problem from start to finish.
 
@@ -39,6 +40,10 @@ def run_my_alphaevolve(
     continued for iterations more iterations instead of starting again.
     None means nothing is saved.
 
+    seed fixes the random choice of parents, so that it can be repeated
+    exactly; None gives different choices every time. The run as a whole is
+    only repeatable if the LLM also gives the same replies.
+
     The run can be stopped early with Ctrl+C; what was done until then is kept.
 
     An iteration in which the LLM gives no reply is skipped. After
@@ -54,7 +59,7 @@ def run_my_alphaevolve(
         raise ValueError(f"iterations must be 0 or more, got {iterations}")
 
     # The memory of the search; created once and reused for the whole run
-    database = Database()
+    database = Database(seed=seed)
     # The writer of prompts for the LLM; created once and reused for the whole run
     prompt_sampler = PromptSampler(problem.description)
     # The keeper of the run's files; None when the run is not saved

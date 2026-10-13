@@ -65,7 +65,8 @@ def ranked_database(archive_size: int, exploitation_ratio: float) -> tuple[Datab
 
     The program at position n of the list has the score n, so the best ones are at the end.
     """
-    database = Database(archive_size, exploitation_ratio)
+    # seed=0 makes the random picks the same on every test run
+    database = Database(archive_size, exploitation_ratio, seed=0)
     programs = [Program(f"x = {number}") for number in range(100)]
     for number, program in enumerate(programs):
         database.add(program, float(number))
@@ -108,10 +109,6 @@ class TestTopPrograms(unittest.TestCase):
 class TestSampling(unittest.TestCase):
     """Checks on how sample picks parents."""
 
-    def setUp(self) -> None:
-        # Parents are picked at random; fixing the seed makes every test repeatable
-        random.seed(0)
-
     def test_failed_programs_are_never_picked_when_a_working_one_exists(self) -> None:
         database = Database()
         working = Program("x = 1")
@@ -151,6 +148,36 @@ class TestSampling(unittest.TestCase):
         share_from_archive = sum(pick in archive_ids for pick in picks) / len(picks)
         # 70% exploitation, plus the 10% of the remaining 30% that lands in the archive anyway
         self.assertAlmostEqual(share_from_archive, 0.73, delta=0.04)
+
+    def test_same_seed_gives_the_same_picks(self) -> None:
+        first_database, first_programs = ranked_database(10, 0.7)
+        second_database, second_programs = ranked_database(10, 0.7)
+        # Programs get new ids each time, so picks are compared by position in the list
+        first_picks = [first_programs.index(first_database.sample()) for _ in range(50)]
+        second_picks = [second_programs.index(second_database.sample()) for _ in range(50)]
+        self.assertEqual(first_picks, second_picks)
+
+    def test_databases_without_a_seed_do_not_pick_alike(self) -> None:
+        programs = [Program(f"x = {number}") for number in range(100)]
+        sequences = []
+        for _ in range(2):
+            database = Database(exploitation_ratio=0.0)
+            for program in programs:
+                database.add(program, 1.0)
+            sequences.append([programs.index(database.sample()) for _ in range(50)])
+        # Two sequences of 50 picks among 100 programs agreeing by chance is unthinkable
+        self.assertNotEqual(sequences[0], sequences[1])
+
+    def test_seeding_the_shared_random_generator_does_not_change_the_picks(self) -> None:
+        undisturbed, undisturbed_programs = ranked_database(10, 0.7)
+        disturbed, disturbed_programs = ranked_database(10, 0.7)
+        expected_picks = [undisturbed_programs.index(undisturbed.sample()) for _ in range(50)]
+        picks = []
+        for _ in range(50):
+            # What an evaluated program might do between two picks of a parent
+            random.seed(0)
+            picks.append(disturbed_programs.index(disturbed.sample()))
+        self.assertEqual(picks, expected_picks)
 
     def test_invalid_settings_are_rejected(self) -> None:
         with self.assertRaises(ValueError):

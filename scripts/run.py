@@ -3,7 +3,7 @@
 Usage:
     python scripts/run.py INITIAL_PROGRAM EVALUATION_FILE --model MODEL
         [--llm-url URL] [--api-key-env VARIABLE] [--max-reply-tokens N]
-        [--iterations N] [--output FOLDER] [--timeout SECONDS]
+        [--iterations N] [--output FOLDER] [--timeout SECONDS] [--seed N]
 """
 
 import argparse
@@ -110,6 +110,15 @@ def main() -> None:
             f"(default: {DEFAULT_TIMEOUT_SECONDS})"
         ),
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help=(
+            "whole number that fixes the random choice of parents, so that it can be "
+            "repeated (default: different choices every run)"
+        ),
+    )
     # The values the user typed, available as args.model, args.llm_url and so on
     # (a dash in the name of an argument becomes an underscore)
     args = parser.parse_args()
@@ -139,7 +148,7 @@ def main() -> None:
     # Each program is scored in its own process, so a bad one cannot hang or end the run.
     # resolve() makes the path absolute, so it stays valid inside those processes.
     evaluator = ProcessEvaluator(args.evaluation_file.resolve(), args.timeout)
-    database = run_my_alphaevolve(problem, llm, evaluator, args.iterations, args.output)
+    database = run_my_alphaevolve(problem, llm, evaluator, args.iterations, args.output, args.seed)
 
     # Show the result of the run: the best program found and its code
     best_program = database.get_best_program()
