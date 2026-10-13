@@ -1,5 +1,6 @@
 """Checks that Program and Database behave as intended."""
 
+import random
 import unittest
 
 from my_alphaevolve.database import Database
@@ -57,6 +58,107 @@ class TestDatabase(unittest.TestCase):
 
     def test_best_of_an_empty_database_is_none(self) -> None:
         self.assertIsNone(Database().get_best_program())
+
+
+def ranked_database(archive_size: int, exploitation_ratio: float) -> tuple[Database, list[Program]]:
+    """Return a database of 100 working programs scoring 0 to 99, and those programs.
+
+    The program at position n of the list has the score n, so the best ones are at the end.
+    """
+    database = Database(archive_size, exploitation_ratio)
+    programs = [Program(f"x = {number}") for number in range(100)]
+    for number, program in enumerate(programs):
+        database.add(program, float(number))
+    return database, programs
+
+
+class TestTopPrograms(unittest.TestCase):
+    """Checks on get_working_programs and get_top_programs."""
+
+    def setUp(self) -> None:
+        # Runs before every test: three working programs and one failed one
+        self.database = Database()
+        self.low = Program("x = 1")
+        self.high = Program("x = 2")
+        self.failed = Program("x = (")
+        self.middle = Program("x = 3")
+        self.database.add(self.low, 1.0)
+        self.database.add(self.high, 3.0)
+        self.database.add(self.failed, float("-inf"))
+        self.database.add(self.middle, 2.0)
+
+    def test_working_programs_leave_out_the_failed_ones(self) -> None:
+        self.assertEqual(self.database.get_working_programs(), [self.low, self.high, self.middle])
+
+    def test_top_programs_are_the_best_ones_best_first(self) -> None:
+        self.assertEqual(self.database.get_top_programs(2), [self.high, self.middle])
+
+    def test_asking_for_more_than_there_are_returns_all_working_programs(self) -> None:
+        top_programs = self.database.get_top_programs(10)
+        self.assertEqual(top_programs, [self.high, self.middle, self.low])
+
+    def test_programs_with_the_same_score_keep_the_order_they_were_added_in(self) -> None:
+        database = Database()
+        first, second = Program("x = 1"), Program("x = 2")
+        database.add(first, 5.0)
+        database.add(second, 5.0)
+        self.assertEqual(database.get_top_programs(2), [first, second])
+
+
+class TestSampling(unittest.TestCase):
+    """Checks on how sample picks parents."""
+
+    def setUp(self) -> None:
+        # Parents are picked at random; fixing the seed makes every test repeatable
+        random.seed(0)
+
+    def test_failed_programs_are_never_picked_when_a_working_one_exists(self) -> None:
+        database = Database()
+        working = Program("x = 1")
+        database.add(working, 1.0)
+        for _ in range(20):
+            database.add(Program("x = ("), float("-inf"))
+        for _ in range(200):
+            self.assertIs(database.sample(), working)
+
+    def test_failed_program_is_picked_when_nothing_else_exists(self) -> None:
+        database = Database()
+        failed = Program("x = (")
+        database.add(failed, float("-inf"))
+        self.assertIs(database.sample(), failed)
+
+    def test_pure_exploitation_only_picks_from_the_archive(self) -> None:
+        database, programs = ranked_database(archive_size=10, exploitation_ratio=1.0)
+        # The archive is the ten best programs: the last ten of the list
+        archive = programs[-10:]
+        picked = {database.sample().id for _ in range(500)}
+        self.assertTrue(picked <= {program.id for program in archive})
+        # With 500 picks among 10 programs, every one of them should have come up
+        self.assertEqual(len(picked), 10)
+
+    def test_pure_exploration_picks_programs_outside_the_archive_too(self) -> None:
+        database, programs = ranked_database(archive_size=10, exploitation_ratio=0.0)
+        archive_ids = {program.id for program in programs[-10:]}
+        picks = [database.sample().id for _ in range(2000)]
+        share_from_archive = sum(pick in archive_ids for pick in picks) / len(picks)
+        # 10 of the 100 programs are in the archive, so about 10% of uniform picks are
+        self.assertAlmostEqual(share_from_archive, 0.10, delta=0.04)
+
+    def test_default_mix_favours_the_archive(self) -> None:
+        database, programs = ranked_database(archive_size=10, exploitation_ratio=0.7)
+        archive_ids = {program.id for program in programs[-10:]}
+        picks = [database.sample().id for _ in range(5000)]
+        share_from_archive = sum(pick in archive_ids for pick in picks) / len(picks)
+        # 70% exploitation, plus the 10% of the remaining 30% that lands in the archive anyway
+        self.assertAlmostEqual(share_from_archive, 0.73, delta=0.04)
+
+    def test_invalid_settings_are_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            Database(archive_size=0)
+        with self.assertRaises(ValueError):
+            Database(exploitation_ratio=1.5)
+        with self.assertRaises(ValueError):
+            Database(exploitation_ratio=-0.1)
 
 
 if __name__ == "__main__":

@@ -1,16 +1,47 @@
 """The Database class: the memory of the evolutionary search."""
 
+import math
 import random
 
 from my_alphaevolve.program import Program
+
+# How many of the best programs form the "archive" that exploitation picks from
+DEFAULT_ARCHIVE_SIZE = 10
+# How often the parent is picked from the archive: 0.7 means 70% of the time
+DEFAULT_EXPLOITATION_RATIO = 0.7
+
+
+def score_of(program: Program) -> float:
+    """Return a program's score as a number, for sorting; unevaluated counts as worst."""
+    return program.score if program.score is not None else float("-inf")
 
 
 class Database:
     """Stores every program produced so far and picks which one to mutate next."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        archive_size: int = DEFAULT_ARCHIVE_SIZE,
+        exploitation_ratio: float = DEFAULT_EXPLOITATION_RATIO,
+    ) -> None:
+        """Create an empty database.
+
+        archive_size and exploitation_ratio tune how sample picks parents;
+        see the sample method.
+
+        Raises ValueError if archive_size is below 1 or exploitation_ratio is
+        not between 0 and 1.
+        """
+        if archive_size < 1:
+            raise ValueError(f"archive_size must be 1 or more, got {archive_size}")
+        if not 0.0 <= exploitation_ratio <= 1.0:
+            raise ValueError(f"exploitation_ratio must be from 0 to 1, got {exploitation_ratio}")
         # All stored programs, as a dictionary: program id -> Program object
         self.programs: dict[str, Program] = {}
+        # How many of the best programs sample treats as the archive
+        self.archive_size: int = archive_size
+        # The share of parents, from 0 to 1, that sample takes from the archive
+        self.exploitation_ratio: float = exploitation_ratio
 
     def add(self, program: Program, results: float) -> None:
         """Store a program and its score under its id."""
@@ -21,15 +52,59 @@ class Database:
         """Look up one program by its id (returns None if no program has that id)."""
         return self.programs.get(program_id)
 
+    def get_working_programs(self) -> list[Program]:
+        """Return the programs whose evaluation succeeded, in the order they were added.
+
+        A failed program has the score minus infinity, which is not a finite number.
+        """
+        return [
+            program
+            for program in self.programs.values()
+            if program.score is not None and math.isfinite(program.score)
+        ]
+
+    def get_top_programs(self, count: int) -> list[Program]:
+        """Return the count best working programs, best first.
+
+        Returns fewer if the database holds fewer working programs. Among
+        programs with the same score, the one added first comes first.
+        """
+        # key=score_of sorts by score; reverse=True puts the highest score first
+        ranked_programs = sorted(self.get_working_programs(), key=score_of, reverse=True)
+        # [:count] keeps the first count items of the list
+        return ranked_programs[:count]
+
     def sample(self) -> Program:
         """Pick the parent for the next mutation.
 
-        For now: random. Later: Evolutionary algorithms.
+        One of two strategies is chosen at random each time:
+
+        - exploitation (exploitation_ratio of the time): a random program from
+          the archive, the archive_size best programs. This refines what
+          already works.
+        - exploration (the rest of the time): a random working program, good
+          or bad. This gives less successful ideas a chance to lead somewhere.
+
+        Failed programs are never picked, unless the database holds nothing else.
+
+        Later: inspirations, islands and a MAP-Elites grid.
+
+        Raises ValueError if the database is empty.
         """
         if not self.programs:
             # Fail with a clear message instead of random.choice's cryptic one
             raise ValueError("Cannot sample from an empty database; add a program first.")
-        return random.choice(list(self.programs.values()))
+
+        working_programs = self.get_working_programs()
+        if not working_programs:
+            # Nothing has ever worked: any program is as good a parent as another
+            return random.choice(list(self.programs.values()))
+
+        # random.random() gives a number from 0 up to 1, so it falls below
+        # exploitation_ratio exactly that share of the time
+        if random.random() < self.exploitation_ratio:
+            return random.choice(self.get_top_programs(self.archive_size))
+        return random.choice(working_programs)
 
     def get_best_program(self) -> Program | None:
         """Return the highest-scoring program (None if the database is empty)."""

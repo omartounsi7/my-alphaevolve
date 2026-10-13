@@ -96,6 +96,19 @@ different one, edit `target_function`, `LOWER_BOUNDS` and `UPPER_BOUNDS` in
 `target.py`; nothing else needs to change. The number of variables is the length
 of the two bounds lists.
 
+## How parents are chosen
+
+Each iteration improves one existing program, the parent. The database picks it
+with one of two strategies, chosen at random each time:
+
+- **Exploitation, 70% of the time**: a random program among the 10 best. This
+  refines what already works.
+- **Exploration, 30% of the time**: a random program among all those that work,
+  good or bad. This gives less successful ideas a chance to lead somewhere.
+
+Programs whose evaluation failed are kept in the database and in the saved run,
+but are never chosen as parents.
+
 ## Saving, stopping and continuing a run
 
 Add `--output` with a folder name to save a run. The folder then holds:
