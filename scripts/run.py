@@ -1,4 +1,4 @@
-"""Entry point: run this file to start my-alphaevolve on a problem.
+"""This file is the entry point of the codebase. Run it to start my-alphaevolve on a problem.
 
 Usage:
     python scripts/run.py INITIAL_PROGRAM EVALUATION_FILE --model MODEL
@@ -17,50 +17,34 @@ from my_alphaevolve.llm import DEFAULT_LLM_URL, DEFAULT_MAX_REPLY_TOKENS, OpenAI
 from my_alphaevolve.loop import run_my_alphaevolve
 from my_alphaevolve.problem import load_problem
 
-# How many iterations a run lasts when --iterations is not given
 DEFAULT_ITERATIONS = 10
-
-# The environment variable the API key is read from when --api-key-env is not given
 DEFAULT_API_KEY_VARIABLE = "OPENAI_API_KEY"
 
 
-def use_utf8_for_output() -> None:
-    """Make print() able to show any character, whatever the system's default is.
-
-    On Windows, output that is redirected to a file or to another program uses
-    an old encoding that lacks many characters. Printing one of them, such as an
-    arrow in a comment written by the LLM, would stop the run with an error.
-    UTF-8 is an encoding that can represent every character.
-    """
+def main() -> None:
+    """Read the settings of the run and start the search."""
+    # Use UTF-8 encoding so that print() is able to show any character.
     for stream in (sys.stdout, sys.stderr):
-        # Only ordinary text output can be switched; anything else is left alone
         if isinstance(stream, io.TextIOWrapper):
             stream.reconfigure(encoding="utf-8")
 
-
-def main() -> None:
-    """Read the settings of the run from the command line and start the search."""
-    use_utf8_for_output()
-    # Describes the arguments this script accepts; also provides --help for free
+    # Parse arguments.
     parser = argparse.ArgumentParser(description="Evolve a program with my-alphaevolve.")
     parser.add_argument(
         "initial_program",
         type=Path,
-        help="path to the Python file holding the initial solution",
+        help="path to the Python file containing the initial solution",
     )
     parser.add_argument(
         "evaluation_file",
         type=Path,
-        help="path to the Python file defining evaluate(namespace) -> score",
+        help="path to the Python file defining the evaluator function",
     )
-    # Starting with "--" means the argument is given by name. required=True makes
-    # it compulsory all the same: there is no sensible default model.
     parser.add_argument(
         "--model",
         required=True,
-        help="name of the LLM to use, as its server knows it",
+        help="name of the LLM to use",
     )
-    # The arguments below are optional: each has a default
     parser.add_argument(
         "--llm-url",
         default=DEFAULT_LLM_URL,
@@ -82,7 +66,7 @@ def main() -> None:
         type=int,
         default=DEFAULT_MAX_REPLY_TOKENS,
         help=(
-            "longest reply asked of the LLM, in tokens; 0 for no limit "
+            "longest reply asked of the LLM in tokens; 0 for no limit "
             f"(default: {DEFAULT_MAX_REPLY_TOKENS})"
         ),
     )
@@ -90,15 +74,15 @@ def main() -> None:
         "--iterations",
         type=int,
         default=DEFAULT_ITERATIONS,
-        help=f"how many new programs to ask the LLM for (default: {DEFAULT_ITERATIONS})",
+        help=f"how many programs the LLM should generate (default: {DEFAULT_ITERATIONS})",
     )
     parser.add_argument(
         "--output",
         type=Path,
         default=None,
         help=(
-            "folder where the run is saved; if it already holds a saved run, "
-            "that run is continued (default: the run is not saved)"
+            "folder where the results of the run are saved; if it already holds a saved run, "
+            "that run is continued"
         ),
     )
     parser.add_argument(
@@ -115,47 +99,42 @@ def main() -> None:
         type=int,
         default=None,
         help=(
-            "whole number that fixes the random choice of parents, so that it can be "
-            "repeated (default: different choices every run)"
+            "number that determines the randomness of each run, fix it so that runs can be repeated"
         ),
     )
-    # The values the user typed, available as args.model, args.llm_url and so on
-    # (a dash in the name of an argument becomes an underscore)
+
     args = parser.parse_args()
     if args.iterations < 0:
-        # parser.error prints the usage message with this explanation, then stops
         parser.error("--iterations must be 0 or more")
     if args.timeout <= 0:
         parser.error("--timeout must be above 0")
     if args.max_reply_tokens < 0:
         parser.error("--max-reply-tokens must be 0 or more")
 
+    # Load the problem.
     problem = load_problem(args.initial_program, args.evaluation_file)
 
-    # The API key is a secret, so it is read from the environment and never typed
-    # on the command line, where it would be visible and remembered. os.environ.get
-    # gives None when the variable is not set, which suits a local server.
+    # Get the LLM.
     api_key = os.environ.get(args.api_key_env)
     llm = OpenAICompatibleLLM(
         model=args.model,
         base_url=args.llm_url,
         api_key=api_key,
-        # 0 on the command line means "no limit", which the class expresses as None
         max_reply_tokens=args.max_reply_tokens or None,
     )
     print(f"LLM: {args.model} at {args.llm_url}")
 
-    # Each program is scored in its own process, so a bad one cannot hang or end the run.
-    # resolve() makes the path absolute, so it stays valid inside those processes.
+    # Load the evaluator.
     evaluator = ProcessEvaluator(args.evaluation_file.resolve(), args.timeout)
+
+    # Run the loop and collect the final database.
     database = run_my_alphaevolve(problem, llm, evaluator, args.iterations, args.output, args.seed)
 
-    # Show the result of the run: the best program found and its code
+    # Print the best program found.
     best_program = database.get_best_program()
     if best_program is not None:
         print(f"Best program: {best_program}\n{best_program.code}")
 
 
-# Only run main() when this file is launched directly, not when it is imported
 if __name__ == "__main__":
     main()

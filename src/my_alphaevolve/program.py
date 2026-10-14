@@ -16,7 +16,7 @@ class Program:
         iteration: int = 0,
         program_id: str | None = None,
     ) -> None:
-        # Unique id for this program: a new one, unless a saved program is being rebuilt
+        # Unique id for this program.
         self.id: str = program_id if program_id is not None else str(uuid.uuid4())
         # The source code of the program
         self.code: str = code
@@ -37,10 +37,7 @@ class Program:
         return f"Program(id={self.id[:8]}, score={self.score}, generation={self.generation})"
 
     def to_dict(self) -> dict[str, Any]:
-        """Return everything known about this program as a dictionary of plain values.
-
-        Plain values (text, numbers, None) are what can be written to a file.
-        """
+        """Return everything known about this program as a dictionary of plain values."""
         return {
             "id": self.id,
             "parent_id": self.parent_id,
@@ -50,8 +47,6 @@ class Program:
             "code": self.code,
         }
 
-    # A classmethod is called on the class itself, Program.from_dict(...), because
-    # there is no program yet to call it on: its job is to create one
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Program":
         """Rebuild a program from a dictionary made by to_dict, keeping its id."""

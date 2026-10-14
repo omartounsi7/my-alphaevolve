@@ -5,14 +5,14 @@ import random
 
 from my_alphaevolve.program import Program
 
-# How many of the best programs form the "archive" that exploitation picks from
+# How many of the best programs form the archive that exploitation picks from.
 DEFAULT_ARCHIVE_SIZE = 10
-# How often the parent is picked from the archive: 0.7 means 70% of the time
+# How often the parent is picked from the archive (0.7 = 70% of the time).
 DEFAULT_EXPLOITATION_RATIO = 0.7
 
 
 def score_of(program: Program) -> float:
-    """Return a program's score as a number, for sorting; unevaluated counts as worst."""
+    """Return a program's score as a number."""
     return program.score if program.score is not None else float("-inf")
 
 
@@ -27,29 +27,16 @@ class Database:
     ) -> None:
         """Create an empty database.
 
-        archive_size and exploitation_ratio tune how sample picks parents;
-        see the sample method.
-
-        seed fixes the sequence of random picks made by sample, so that the
-        choice of parents can be repeated exactly; None gives a different
-        sequence every time.
-
-        Raises ValueError if archive_size is below 1 or exploitation_ratio is
-        not between 0 and 1.
+        archive_size and exploitation_ratio tune how sample picks parents.
+        seed fixes the random picks, so that they can be repeated.
         """
         if archive_size < 1:
             raise ValueError(f"archive_size must be 1 or more, got {archive_size}")
         if not 0.0 <= exploitation_ratio <= 1.0:
             raise ValueError(f"exploitation_ratio must be from 0 to 1, got {exploitation_ratio}")
-        # All stored programs, as a dictionary: program id -> Program object
         self.programs: dict[str, Program] = {}
-        # How many of the best programs sample treats as the archive
         self.archive_size: int = archive_size
-        # The share of parents, from 0 to 1, that sample takes from the archive
         self.exploitation_ratio: float = exploitation_ratio
-        # This database's own source of randomness. The random module also offers a
-        # shared one, but any other code can reset that with random.seed(), which
-        # would make the choice of parents repeat itself.
         self.random_generator: random.Random = random.Random(seed)
 
     def add(self, program: Program, results: float) -> None:
@@ -78,9 +65,7 @@ class Database:
         Returns fewer if the database holds fewer working programs. Among
         programs with the same score, the one added first comes first.
         """
-        # key=score_of sorts by score; reverse=True puts the highest score first
         ranked_programs = sorted(self.get_working_programs(), key=score_of, reverse=True)
-        # [:count] keeps the first count items of the list
         return ranked_programs[:count]
 
     def sample(self) -> Program:
@@ -96,21 +81,15 @@ class Database:
 
         Failed programs are never picked, unless the database holds nothing else.
 
-        Later: inspirations, islands and a MAP-Elites grid.
-
         Raises ValueError if the database is empty.
         """
         if not self.programs:
-            # Fail with a clear message instead of random.choice's cryptic one
             raise ValueError("Cannot sample from an empty database; add a program first.")
 
         working_programs = self.get_working_programs()
         if not working_programs:
-            # Nothing has ever worked: any program is as good a parent as another
             return self.random_generator.choice(list(self.programs.values()))
 
-        # random() gives a number from 0 up to 1, so it falls below
-        # exploitation_ratio exactly that share of the time
         if self.random_generator.random() < self.exploitation_ratio:
             return self.random_generator.choice(self.get_top_programs(self.archive_size))
         return self.random_generator.choice(working_programs)
@@ -118,7 +97,6 @@ class Database:
     def get_best_program(self) -> Program | None:
         """Return the highest-scoring program (None if the database is empty)."""
         best_program: Program | None = None
-        # The score of best_program, kept separately so it is always a plain number
         best_score = float("-inf")
         for program in self.programs.values():
             if program.score is None:

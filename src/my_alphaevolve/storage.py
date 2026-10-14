@@ -1,45 +1,33 @@
-"""The RunStorage class: keeps the programs of a run in a folder on disk.
-
-Saving lets a run be inspected afterwards, and stopped and continued later.
-"""
+"""The RunStorage class: keeps the programs of a run in a folder on disk."""
 
 import json
 from pathlib import Path
 
 from my_alphaevolve.program import Program
 
-# The file holding every program of the run, one per line
+# One JSON line per program.
 PROGRAMS_FILE_NAME = "programs.jsonl"
-# The file holding the code of the best program found so far
+# The code of the best program so far.
 BEST_PROGRAM_FILE_NAME = "best_program.py"
 
 
 class RunStorage:
     """Reads and writes the programs of one run in its output folder.
 
-    Every program is written as one line of JSON, a standard text format for
-    structured data, at the end of programs.jsonl. Adding a line costs the same
-    however many programs are already saved, and a run that stops abruptly
-    loses nothing that was already written.
+    Programs are appended as JSON lines, so a run that stops abruptly loses
+    nothing that was already written.
     """
 
     def __init__(self, folder: Path) -> None:
         """Use the given folder for this run, creating it if it does not exist."""
-        # The output folder of the run
         self.folder: Path = folder
-        # The file with one line per program
         self.programs_path: Path = folder / PROGRAMS_FILE_NAME
-        # The file with the code of the best program
         self.best_program_path: Path = folder / BEST_PROGRAM_FILE_NAME
-        # parents=True also creates missing folders above it; exist_ok=True accepts an existing one
         folder.mkdir(parents=True, exist_ok=True)
 
     def append_program(self, program: Program) -> None:
         """Add one program at the end of the programs file."""
-        # ensure_ascii=False keeps characters such as accents readable in the file.
-        # A failed program's score, minus infinity, is written as -Infinity.
         line = json.dumps(program.to_dict(), ensure_ascii=False)
-        # "a" opens the file for appending: what is written goes after what is there
         with self.programs_path.open("a", encoding="utf-8") as programs_file:
             programs_file.write(line + "\n")
 
@@ -60,7 +48,7 @@ class RunStorage:
             except (json.JSONDecodeError, KeyError, TypeError) as error:
                 if line_number == len(lines):
                     # Only the last line is damaged: the run was cut off while writing it.
-                    # Drop it, and rewrite the file so new lines are not glued to its remains.
+                    # Drop it and rewrite the file, so new lines are not glued to its remains.
                     self._rewrite_programs_file(programs)
                     break
                 raise ValueError(
@@ -70,7 +58,6 @@ class RunStorage:
 
     def save_best_program(self, program: Program) -> None:
         """Write the code of the best program so far, replacing the previous best."""
-        # Comment lines saying where this code comes from, then the code itself
         header = (
             f"# Best program so far: score {program.score}, "
             f"found at iteration {program.iteration}\n"

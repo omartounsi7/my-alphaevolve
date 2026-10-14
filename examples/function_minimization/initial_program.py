@@ -25,5 +25,4 @@ def search(
     upper_bounds: list[float],
 ) -> list[float]:
     """Return the point within the bounds where we think target_function is lowest."""
-    # A deliberately poor first attempt: always answer with the lowest corner
     return list(lower_bounds)

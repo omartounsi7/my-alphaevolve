@@ -10,13 +10,10 @@ example mentions a particular function or number of coordinates.
 import math
 
 # The smallest and largest value allowed for each coordinate of a point.
-# Both lists must have the same length: one entry per coordinate.
 LOWER_BOUNDS = [-10.0, -10.0]
 UPPER_BOUNDS = [10.0, 10.0]
 
 
 def target_function(point: list[float]) -> float:
     """Return the height of the surface at a point; this is what we want to make small."""
-    # For each coordinate x: sin(3 * x) makes waves and x**2 / 10 is a wide bowl,
-    # so the surface has many valleys and one of them is the deepest
     return sum(math.sin(3 * x) + x**2 / 10 for x in point)

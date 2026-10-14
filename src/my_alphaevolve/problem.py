@@ -1,15 +1,12 @@
 """The Problem class: what the user wants solved, in a form the algorithm can use.
 
-As in AlphaEvolve, the user supplies two things, each as a Python file:
+The user supplies two things, each as a Python file:
 
 - an initial solution: the program that evolution starts from. It must begin
-  with a docstring describing the problem, because that text is what tells
-  the LLM what it is being asked to improve;
+  with a docstring describing the problem;
 - the evaluation criteria: a file defining a function called evaluate, which
-  receives every name a candidate program defined (a dictionary) and returns
+  receives every name a candidate program defined as a dictionary and returns
   that program's score (a number, higher is better).
-
-Nothing in this file is specific to any one problem.
 """
 
 import ast
@@ -19,8 +16,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-# The kind of function that scores a program: it receives the names the program
-# defined (a dictionary) and returns that program's score (a number)
+# The type of function that scores a program: it receives the namespace
+# of the program (a dictionary) and returns that program's score (a number)
 ScoreFunction = Callable[[dict[str, Any]], float]
 
 # The name of the function the user's evaluation file must define
@@ -28,16 +25,11 @@ EVALUATE_FUNCTION_NAME = "evaluate"
 
 
 def read_description(initial_code: str) -> str:
-    """Return the problem description: the docstring at the top of the initial program.
-
-    Raises ValueError if the code is not valid Python or has no such docstring.
-    """
+    """Return the problem description: the docstring at the top of the initial program."""
     try:
-        # ast.parse reads code into a structure Python can inspect, without running it
         parsed_code = ast.parse(initial_code)
     except SyntaxError as error:
         raise ValueError(f"The initial program is not valid Python: {error}") from error
-    # The text of the docstring that opens the file, or None if there is none
     description = ast.get_docstring(parsed_code)
     if not description:
         raise ValueError(
@@ -50,95 +42,56 @@ class Problem:
     """One problem to solve: an initial solution plus the file that scores solutions."""
 
     def __init__(self, initial_code: str, evaluation_path: Path | None = None) -> None:
-        """Store the user's inputs.
-
-        Raises ValueError if initial_code does not start with a docstring
-        describing the problem.
-        """
-        # The source code of the starting program, as text
+        """Store the user's inputs."""
+        # The source code of the starting program.
         self.initial_code: str = initial_code
-        # The user's file defining evaluate. It is kept as a path, not as a function,
-        # because programs are scored in a separate process, which loads the file itself.
-        # None when the scoring is supplied some other way, as the tests do.
+        # The user's file defining the evaluate function.
         self.evaluation_path: Path | None = evaluation_path
-        # What the problem is, in plain words; shown to the LLM in every prompt
+        # What the problem is, in plain words. Shown to the LLM in every prompt
         self.description: str = read_description(initial_code)
 
 
-def forget_modules_from_folder(folder: Path, names_imported_before: set[str]) -> None:
-    """Make Python forget the helper files that an evaluation file imported.
-
-    Python imports a file only once, then reuses it whenever the same name is
-    imported again. Without this, a second problem importing its own helper of
-    the same name (for example target.py) would silently be given the first
-    problem's helper. The evaluation function is unaffected: it keeps its own
-    link to the helpers it imported.
-
-    Only files inside folder that were not imported before are forgotten.
-    """
-    for name in set(sys.modules) - names_imported_before:
-        # The file a module was loaded from; modules built into Python have none
-        module_file = getattr(sys.modules[name], "__file__", None)
-        if module_file and Path(module_file).resolve().is_relative_to(folder):
-            del sys.modules[name]
-
-
 def load_score_function(evaluation_path: Path) -> ScoreFunction:
-    """Run the user's evaluation file and return the evaluate function it defines.
-
-    Raises FileNotFoundError if the file is missing, and ValueError if it does
-    not define a function called evaluate.
-    """
+    """Run the user's evaluation file and return the evaluate function it defines."""
     if not evaluation_path.is_file():
         raise FileNotFoundError(f"no such file: {evaluation_path}")
 
-    # The folder of the evaluation file, as an absolute path
     evaluation_folder = evaluation_path.resolve().parent
-    # sys.modules is Python's memory of every file imported so far, by name.
-    # Note the names it holds now, to tell afterwards which ones are new.
+    # Remember the modules imported so far, to spot the new ones afterwards.
     names_imported_before = set(sys.modules)
-    # Let the evaluation file import helper files that sit next to it:
-    # sys.path is the list of folders Python searches when it sees "import"
+    # Let the evaluation file import helper files that sit next to it.
     sys.path.insert(0, str(evaluation_folder))
     try:
-        # Run the evaluation file and collect every name it defines in a dictionary
+        # Run the file; the result is a dictionary of the names it defines.
         evaluation_names = runpy.run_path(str(evaluation_path))
     finally:
-        # Put things back as they were, whether or not the file ran cleanly
         sys.path.remove(str(evaluation_folder))
-        forget_modules_from_folder(evaluation_folder, names_imported_before)
-    # None if the file does not define the required function
+        # Forget the helpers the file imported.
+        for name in set(sys.modules) - names_imported_before:
+            module_file = getattr(sys.modules[name], "__file__", None)
+            if module_file and Path(module_file).resolve().is_relative_to(evaluation_folder):
+                del sys.modules[name]
     score_function = evaluation_names.get(EVALUATE_FUNCTION_NAME)
     if not callable(score_function):
         raise ValueError(
             f"{evaluation_path} must define a function called {EVALUATE_FUNCTION_NAME}"
         )
-    # mypy cannot know what a user's file defines; callable() is the check done here
     checked_function: ScoreFunction = score_function
     return checked_function
 
 
 def load_problem(initial_program_path: Path, evaluation_path: Path) -> Problem:
-    """Build a Problem from the two files the user provides.
-
-    Raises FileNotFoundError if a file is missing, and ValueError if the
-    evaluation file does not define a function called evaluate or the initial
-    program does not start with a docstring describing the problem.
-    """
-    # Check both files up front, so a wrong path gives a clear message
+    """Build a Problem object using the initial program and evaluation files the user provides."""
+    # Check both files up front.
     for path in (initial_program_path, evaluation_path):
         if not path.is_file():
             raise FileNotFoundError(f"no such file: {path}")
 
-    # The initial program is only read, not run: programs travel as text.
-    # "utf-8-sig" is UTF-8 that also drops the invisible marker (BOM) which
-    # some Windows editors put at the start of a file and Python cannot run
+    # Read the initial program
     initial_code = initial_program_path.read_text(encoding="utf-8-sig")
 
-    # Load the evaluation file once, only to report a mistake in it right away.
-    # The function itself is not kept: each program is scored in a separate
-    # process, which loads the file again from its path.
+    # Load the score function.
     load_score_function(evaluation_path)
 
-    # resolve() makes the path absolute, so it stays valid whatever folder a process starts in
+    # Return the Problem.
     return Problem(initial_code, evaluation_path.resolve())
