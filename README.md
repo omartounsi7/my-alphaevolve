@@ -33,6 +33,7 @@ python3 -m venv .venv
 ```
 
 Runs also need Docker, installed and running (see "How programs are run").
+Without Docker, the tests that need it are skipped.
 
 ## Choosing the LLM
 
@@ -177,13 +178,11 @@ Docker Engine on Linux. On first use, the run builds the image the containers
 start from (`src/my_alphaevolve/evaluation.Dockerfile`), which downloads Python's
 official image once. Starting a container costs about one second per program.
 
-On a machine without Docker, `--evaluator process` runs each program in a
-separate Python process instead. It keeps the time limit and keeps crashes from
-reaching the run, but it is **not a security barrier**: the program runs with
-your permissions and can read and write your files.
+There is no way to run programs outside a container: a run stops at once if
+Docker is not available.
 
-In both cases the evaluation file is loaded again for every program, so slow
-work at the top of that file is repeated each time.
+The evaluation file is loaded again for every program, so slow work at the top
+of that file is repeated each time.
 
 ## How parents are chosen
 
@@ -241,9 +240,6 @@ The run commands use a local Ollama model; see "Choosing the LLM" for others.
 
 # The same, saved in a folder; launch it again to continue the run for 50 more iterations
 .venv\Scripts\python.exe scripts\run.py examples\function_minimization\initial_program.py examples\function_minimization\evaluation.py --model qwen2.5-coder:3b --iterations 50 --output runs\function_minimization
-
-# The same, on a machine without Docker
-.venv\Scripts\python.exe scripts\run.py examples\function_minimization\initial_program.py examples\function_minimization\evaluation.py --model qwen2.5-coder:3b --evaluator process
 
 # The same, stopping any program that runs for more than 5 seconds
 .venv\Scripts\python.exe scripts\run.py examples\function_minimization\initial_program.py examples\function_minimization\evaluation.py --model qwen2.5-coder:3b --timeout 5

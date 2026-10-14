@@ -11,10 +11,10 @@ from pathlib import Path
 from typing import Any
 
 from docker_check import docker_is_available
+from doubles import InProcessEvaluator
 from fake_llm_server import FakeLLMServer
 
 from my_alphaevolve.database import Database
-from my_alphaevolve.evaluator import InProcessEvaluator
 from my_alphaevolve.llm import LLM, FakeLLM, LLMError
 from my_alphaevolve.loop import MAX_LLM_FAILURES_IN_A_ROW, run_my_alphaevolve
 from my_alphaevolve.problem import Problem
@@ -226,6 +226,7 @@ class TestRunMyAlphaevolve(unittest.TestCase):
         self.assertEqual(llm.calls, 10)
 
 
+@unittest.skipUnless(docker_is_available(), "Docker is not available")
 class TestRunScript(unittest.TestCase):
     """Checks on scripts/run.py, launched the way a user would launch it.
 
@@ -268,8 +269,6 @@ class TestRunScript(unittest.TestCase):
             "test-model",
             "--llm-url",
             self.server.url,
-            "--evaluator",
-            "process",
             *arguments,
             environment=environment,
         )
@@ -316,8 +315,7 @@ class TestRunScript(unittest.TestCase):
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         self.assertIn("Iteration 2/2", result.stdout)
 
-    @unittest.skipUnless(docker_is_available(), "Docker is not available")
-    def test_programs_run_in_docker_by_default(self) -> None:
+    def test_programs_run_in_docker(self) -> None:
         result = self.launch(
             str(EXAMPLE_FOLDER / "initial_program.py"),
             str(EXAMPLE_FOLDER / "evaluation.py"),
@@ -363,8 +361,6 @@ class TestRunScript(unittest.TestCase):
                 "test-model",
                 "--llm-url",
                 self.server.url,
-                "--evaluator",
-                "process",
                 "--iterations",
                 "1",
             )

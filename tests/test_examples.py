@@ -1,14 +1,16 @@
 """Checks that the example problems in the examples folder work with the evaluator.
 
-The programs are scored the way a real run scores them: each in its own process.
+The programs are scored in the test process, since these tests check the example's
+rules; the Docker evaluator has its own tests.
 """
 
 import runpy
 import unittest
 from pathlib import Path
 
-from my_alphaevolve.evaluator import ProcessEvaluator
-from my_alphaevolve.problem import load_problem
+from doubles import InProcessEvaluator
+
+from my_alphaevolve.problem import load_problem, load_score_function
 from my_alphaevolve.program import Program
 
 # The folder holding the function-minimization example, found relative to this test file
@@ -47,7 +49,7 @@ class TestFunctionMinimization(unittest.TestCase):
             EXAMPLE_FOLDER / "initial_program.py",
             EXAMPLE_FOLDER / "evaluation.py",
         )
-        self.evaluator = ProcessEvaluator(EXAMPLE_FOLDER / "evaluation.py")
+        self.evaluator = InProcessEvaluator(load_score_function(EXAMPLE_FOLDER / "evaluation.py"))
         # The example's own settings: the function to minimize and the allowed region
         target_names = runpy.run_path(str(EXAMPLE_FOLDER / "target.py"))
         self.target_function = target_names["target_function"]

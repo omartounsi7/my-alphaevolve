@@ -9,10 +9,11 @@ import unittest
 from pathlib import Path
 from typing import Any
 
+from docker_check import docker_is_available
+from doubles import InProcessEvaluator
 from fake_llm_server import FakeLLMServer
 
 from my_alphaevolve.database import Database
-from my_alphaevolve.evaluator import InProcessEvaluator
 from my_alphaevolve.llm import LLM, FakeLLM
 from my_alphaevolve.loop import run_my_alphaevolve
 from my_alphaevolve.problem import Problem
@@ -151,6 +152,7 @@ class TestSavingARun(unittest.TestCase):
         self.assertFalse(self.output_folder.exists())
 
 
+@unittest.skipUnless(docker_is_available(), "Docker is not available")
 class TestRunScriptOutput(unittest.TestCase):
     """Checks on the --output option of scripts/run.py."""
 
@@ -172,8 +174,6 @@ class TestRunScriptOutput(unittest.TestCase):
                 "test-model",
                 "--llm-url",
                 self.server.url,
-                "--evaluator",
-                "process",
                 "--iterations",
                 str(iterations),
                 "--output",

@@ -1,28 +1,21 @@
 """The Evaluator classes: run a program and measure how good it is.
 
-- DockerEvaluator runs each program in its own Docker container: no network, a
-  read-only file system, limited memory and a time limit. The default for real runs.
-- ProcessEvaluator runs each program in a separate process with a time limit.
-  For machines without Docker.
-- InProcessEvaluator runs programs in the current process. Only for trusted code, as in the tests.
+Runs always use DockerEvaluator, which runs each program in its own Docker
+container: no network, a read-only file system, limited memory and a time limit.
 """
 
 import hashlib
-import io
 import json
 import math
-import multiprocessing
 import shutil
 import subprocess
-import sys
 import tempfile
 import uuid
 from abc import ABC, abstractmethod
-from multiprocessing.connection import Connection
 from pathlib import Path
 from typing import Any
 
-from my_alphaevolve.problem import ScoreFunction, load_score_function
+from my_alphaevolve.problem import ScoreFunction
 from my_alphaevolve.program import Program
 
 # How long one program may run, in seconds.
@@ -69,108 +62,6 @@ class Evaluator(ABC):
     @abstractmethod
     def execute(self, program: Program) -> float:
         """Run the program's code and return its score (higher is better)."""
-
-
-class InProcessEvaluator(Evaluator):
-    """Runs programs inside the current Python process.
-
-    Only for trusted code: there is no time limit and no separation, so an
-    infinite loop hangs everything and a program can disturb the rest of the run.
-    """
-
-    def __init__(self, score_function: ScoreFunction) -> None:
-        super().__init__()
-        # Turns a program's namespace into a score.
-        self.score_function: ScoreFunction = score_function
-
-    def execute(self, program: Program) -> float:
-        """Run the program's code and return its score (higher is better).
-
-        A program that crashes, breaks the problem's rules, or is given a score
-        that is not a finite number gets failure_score.
-        """
-        try:
-            return score_program(program.code, self.score_function)
-        except Exception as error:
-            # The program crashed or misbehaved.
-            print(f"Evaluation failed: {describe_error(error)}")
-            return self.failure_score
-
-
-def _evaluate_in_child(code: str, evaluation_path: str, connection: Connection) -> None:
-    """Score one program and send back ("ok", score) or ("error", message)."""
-    # Use UTF-8 like the parent.
-    for stream in (sys.stdout, sys.stderr):
-        if isinstance(stream, io.TextIOWrapper):
-            stream.reconfigure(encoding="utf-8")
-    try:
-        score_function = load_score_function(Path(evaluation_path))
-        connection.send(("ok", score_program(code, score_function)))
-    except Exception as error:
-        connection.send(("error", describe_error(error)))
-
-
-class ProcessEvaluator(Evaluator):
-    """Runs each program in a separate Python process, with a time limit.
-
-    A program that loops forever is stopped when its time is up, and one that
-    crashes or exits only ends its own process. Nothing a program does to
-    Python's state reaches the main process or the next program.
-
-    This is NOT a security barrier: the program still runs with the user's
-    permissions and can read and write files.
-    """
-
-    def __init__(
-        self,
-        evaluation_path: Path,
-        timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
-    ) -> None:
-        """Prepare an evaluator for the problem scored by the given evaluation file."""
-        super().__init__()
-        if timeout_seconds <= 0:
-            raise ValueError(f"timeout_seconds must be above 0, got {timeout_seconds}")
-        # The user's file defining evaluate; each child loads it itself.
-        self.evaluation_path: Path = evaluation_path
-        # How long one program may run before it is stopped.
-        self.timeout_seconds: float = timeout_seconds
-        # "spawn" starts every child as a fresh Python on every operating system.
-        self._context = multiprocessing.get_context("spawn")
-
-    def execute(self, program: Program) -> float:
-        """Run the program's code in a child process and return its score.
-
-        A program that crashes, breaks the problem's rules, is given an invalid
-        score, runs too long or ends its process gets failure_score.
-        """
-        parent_end, child_end = self._context.Pipe(duplex=False)
-        child = self._context.Process(
-            target=_evaluate_in_child,
-            args=(program.code, str(self.evaluation_path), child_end),
-        )
-        child.start()
-        # Close the parent's copy of the child's end, so a silent child death raises EOFError.
-        child_end.close()
-        try:
-            if not parent_end.poll(self.timeout_seconds):
-                print(f"Evaluation failed: no answer after {self.timeout_seconds} seconds")
-                return self.failure_score
-            status, value = parent_end.recv()
-        except EOFError:
-            # The child ended without sending anything, e.g. the program called sys.exit().
-            print("Evaluation failed: the program stopped without giving an answer")
-            return self.failure_score
-        finally:
-            # Always clean up.
-            if child.is_alive():
-                child.kill()
-            child.join()
-            parent_end.close()
-
-        if status == "error":
-            print(f"Evaluation failed: {value}")
-            return self.failure_score
-        return float(value)
 
 
 class DockerUnavailableError(RuntimeError):
@@ -224,14 +115,11 @@ class DockerEvaluator(Evaluator):
 
     def _check_docker(self) -> None:
         if shutil.which("docker") is None:
-            raise DockerUnavailableError(
-                "Docker is not installed: install it, or use --evaluator process."
-            )
+            raise DockerUnavailableError("Docker is not installed.")
         result = subprocess.run(["docker", "info"], capture_output=True, check=False)
         if result.returncode != 0:
             raise DockerUnavailableError(
-                "Docker is not running: start it (Docker Desktop on Windows and macOS), "
-                "or use --evaluator process."
+                "Docker is not running: start it (Docker Desktop on Windows and macOS)."
             )
 
     def _ensure_image(self) -> None:
