@@ -21,6 +21,7 @@ dependencies = [
 dev = [
     "mypy>=1.10",  # type checker: finds type mistakes without running the code
     "ruff>=0.6",   # linter and formatter: finds common bugs and keeps the style uniform
+    "numpy",       # imported by the examples' evaluation files, which are also loaded here
 ]
 
 [tool.setuptools.package-data]

@@ -1,4 +1,6 @@
 # Packages that programs for this problem may import, besides Python's standard library.
+# The same as in OpenEvolve, which lists matplotlib and scipy; numpy comes with them.
 # Exact versions keep scores comparable between runs.
+matplotlib==3.11.2
 numpy==2.5.4
 scipy==1.18.1

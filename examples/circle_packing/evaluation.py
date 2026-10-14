@@ -1,88 +1,71 @@
 """The evaluation criteria for the circle packing example.
 
-Every candidate program must define construct_packing(), returning the centers
-and radii of 26 circles. The score is the sum of the radii of a valid packing.
+They compute the score of OpenEvolve's examples/circle_packing/evaluator.py, run
+with its config_phase_1.yaml (cascade evaluation, thresholds 0.5 and 0.75): the
+sum of the radii of a valid packing divided by 2.635, or 0. Both of OpenEvolve's
+stages compute this score, so a program scoring at least 0.5 is run a second
+time, and the second score replaces the first.
 """
 
-import itertools
-import math
+from collections.abc import Callable
 from typing import Any
 
+import numpy as np
+
 # The function every program must define.
-FUNCTION_NAME = "construct_packing"
+FUNCTION_NAME = "run_packing"
 NUMBER_OF_CIRCLES = 26
-# Allowed numerical error, as in OpenEvolve's circle packing evaluator.
+# The sum the AlphaEvolve paper reached, which scores are divided by.
+TARGET_VALUE = 2.635
+# Allowed numerical error.
 TOLERANCE = 1e-6
+# The score stage 1 must reach for stage 2 to run.
+STAGE_2_THRESHOLD = 0.5
 
 
-def to_numbers(values: Any, what: str) -> list[float]:
-    """Return a sequence of numbers as a list of floats; numpy arrays are accepted too.
+def validate_packing(centers: Any, radii: Any) -> bool:
+    """Tell whether every circle is inside the unit square and no two circles overlap."""
+    if np.isnan(centers).any() or np.isnan(radii).any():
+        return False
+    for (x, y), r in zip(centers, radii, strict=True):
+        if r < 0:
+            return False
+        if (
+            x - r < -TOLERANCE
+            or x + r > 1 + TOLERANCE
+            or y - r < -TOLERANCE
+            or y + r > 1 + TOLERANCE
+        ):
+            return False
+    for i in range(NUMBER_OF_CIRCLES):
+        for j in range(i + 1, NUMBER_OF_CIRCLES):
+            dist = np.sqrt(np.sum((centers[i] - centers[j]) ** 2))
+            if dist < radii[i] + radii[j] - TOLERANCE:
+                return False
+    return True
 
-    Raises ValueError if values is not a sequence of finite real numbers.
-    """
-    # A numpy array or number turns itself into plain Python values.
-    if hasattr(values, "tolist"):
-        values = values.tolist()
-    if not isinstance(values, list | tuple):
-        raise ValueError(f"{what}: expected a list of numbers, got {type(values).__name__}")
-    numbers = []
-    for value in values:
-        if hasattr(value, "item"):
-            value = value.item()
-        if isinstance(value, bool) or not isinstance(value, int | float):
-            raise ValueError(f"{what}: expected only numbers, got {type(value).__name__}")
-        if not math.isfinite(value):
-            raise ValueError(f"{what}: expected finite numbers, got {value}")
-        numbers.append(float(value))
-    return numbers
 
-
-def validate_packing(centers: Any, radii: Any) -> tuple[list[tuple[float, float]], list[float]]:
-    """Check that a packing follows the rules and return it as plain Python numbers.
-
-    Raises ValueError with an explanation if any rule is broken.
-    """
-    if hasattr(centers, "tolist"):
-        centers = centers.tolist()
-    if not isinstance(centers, list | tuple) or len(centers) != NUMBER_OF_CIRCLES:
-        raise ValueError(f"expected {NUMBER_OF_CIRCLES} centers")
-    points = []
-    for index, center in enumerate(centers):
-        coordinates = to_numbers(center, f"center {index}")
-        if len(coordinates) != 2:
-            raise ValueError(f"center {index}: expected (x, y), got {len(coordinates)} numbers")
-        points.append((coordinates[0], coordinates[1]))
-
-    sizes = to_numbers(radii, "radii")
-    if len(sizes) != NUMBER_OF_CIRCLES:
-        raise ValueError(f"expected {NUMBER_OF_CIRCLES} radii, got {len(sizes)}")
-
-    for index, ((x, y), radius) in enumerate(zip(points, sizes, strict=True)):
-        if radius < 0:
-            raise ValueError(f"circle {index} has a negative radius: {radius}")
-        if min(x - radius, y - radius) < -TOLERANCE or max(x + radius, y + radius) > 1 + TOLERANCE:
-            raise ValueError(f"circle {index} at ({x}, {y}) with radius {radius} leaves the square")
-
-    for (i, first), (j, second) in itertools.combinations(enumerate(points), 2):
-        distance = math.dist(first, second)
-        if distance < sizes[i] + sizes[j] - TOLERANCE:
-            raise ValueError(
-                f"circles {i} and {j} overlap: distance {distance}, radii {sizes[i]} + {sizes[j]}"
-            )
-    return points, sizes
+def packing_score(run_packing: Callable[[], Any]) -> float:
+    """Call run_packing and score its packing; any failure scores 0, as in OpenEvolve."""
+    try:
+        centers, radii, _ = run_packing()
+        centers = np.asarray(centers)
+        radii = np.asarray(radii)
+        if centers.shape != (NUMBER_OF_CIRCLES, 2) or radii.shape != (NUMBER_OF_CIRCLES,):
+            return 0.0
+        if not validate_packing(centers, radii):
+            return 0.0
+        return float(np.sum(radii) / TARGET_VALUE)
+    except Exception:
+        return 0.0
 
 
 def evaluate(namespace: dict[str, Any]) -> float:
-    """Return the sum of the radii of the program's packing (higher is better).
-
-    Raises ValueError if the program breaks the rules.
-    """
+    """Return the program's score, as OpenEvolve computes it (higher is better)."""
     if FUNCTION_NAME not in namespace:
-        raise ValueError(f"the program does not define a function called {FUNCTION_NAME}")
-
-    answer = namespace[FUNCTION_NAME]()
-    if not isinstance(answer, list | tuple) or len(answer) != 2:
-        raise ValueError(f"{FUNCTION_NAME} must return two values: centers and radii")
-
-    _, radii = validate_packing(answer[0], answer[1])
-    return sum(radii)
+        return 0.0
+    run_packing = namespace[FUNCTION_NAME]
+    score = packing_score(run_packing)
+    if score < STAGE_2_THRESHOLD:
+        return score
+    return packing_score(run_packing)

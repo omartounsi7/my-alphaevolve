@@ -131,56 +131,58 @@ answer = 1
 The description is read once, from the initial solution. Later programs written
 by the LLM do not need to keep the docstring.
 
-## Example: function minimization
+## Examples
 
-`examples/function_minimization/` asks for a program that finds the lowest point
-of a function of one or several variables. It has four files:
+Both examples are OpenEvolve's, adapted to this project's format so that runs
+start from the same baseline as OpenEvolve's and can be compared with them: the
+same initial programs, the same scores, and the same packages.
+[examples/README.md](examples/README.md) lists what was adapted.
+
+As in OpenEvolve, a program that runs but gives a wrong answer scores 0 in these
+examples, instead of failing.
+
+### Function minimization
+
+`examples/function_minimization/` asks for the global minimum of
+f(x, y) = sin(x) cos(y) + sin(xy) + (x² + y²) / 20, which has many local minima.
 
 | File | Contents |
 |---|---|
-| `initial_program.py` | The problem description and a deliberately poor first `search` |
-| `evaluation.py` | `evaluate`, which calls the program's `search` and scores its answer |
-| `target.py` | The function to minimize and the region to search |
+| `initial_program.py` | The problem description and OpenEvolve's random search |
+| `evaluation.py` | `evaluate`, which computes OpenEvolve's score |
 | `requirements.txt` | The packages programs may import: numpy and scipy |
 
-Programs do not know the function in advance. `search` receives it as an
-argument, together with the bounds, and has to explore it by calling it:
+Programs define `run_search()`, which returns `(x, y, value)` or `(x, y)`. As in
+OpenEvolve, the score depends on how close the answer is to the global minimum
+(about x = -1.704, y = 0.678, f = -1.519), up to 1.5:
 
-```python
-def search(target_function, lower_bounds, upper_bounds):
-    ...
-    return point
-```
+1. `run_search` is called once, and its answer scored.
+2. A program scoring 1.3 or more is scored again on 10 calls, which also
+   rewards succeeding every time. This second score replaces the first.
 
-A point is **always a list of numbers**, one per variable, and the bounds are
-lists of the same length. A function of one variable is no exception: its points
-are lists holding a single number, such as `[0.5]`.
+The initial program searches at random without a seed, so its score changes
+from one evaluation to the next (1.03, 1.25 or 1.43, for example).
 
-So the example works for any function of any number of variables. To minimize a
-different one, edit `target_function`, `LOWER_BOUNDS` and `UPPER_BOUNDS` in
-`target.py`; nothing else needs to change. The number of variables is the length
-of the two bounds lists.
-
-## Example: circle packing
+### Circle packing
 
 `examples/circle_packing/` is one of the problems of the AlphaEvolve paper:
 place 26 circles inside a square of side 1, without overlap, so that the sum of
-their radii is as large as possible. It is modelled on OpenEvolve's example of
-the same name.
+their radii is as large as possible.
 
 | File | Contents |
 |---|---|
-| `initial_program.py` | The problem description and `construct_packing()`, which returns the centers and radii |
-| `evaluation.py` | `evaluate`, which checks the packing and returns the sum of the radii |
-| `requirements.txt` | The packages programs may import: numpy and scipy |
+| `initial_program.py` | The problem description and OpenEvolve's constructor |
+| `evaluation.py` | `evaluate`, which checks the packing and computes OpenEvolve's score |
+| `requirements.txt` | The packages programs may import: matplotlib, numpy and scipy |
 
-A packing fails if it does not have exactly 26 circles, if a circle leaves the
-square, if two circles overlap, or if a radius is negative. As in OpenEvolve,
-errors up to 1e-6 are tolerated. Centers and radii may be lists or numpy arrays.
+Programs define `run_packing()`, which returns the centers (a numpy array of
+shape (26, 2)), the radii (shape (26,)) and their sum. The score is the sum of
+the radii divided by 2.635, the sum AlphaEvolve reported, or 0 if a circle leaves
+the square, two circles overlap, or a radius is negative. Errors up to 1e-6 are
+tolerated. As in OpenEvolve, a packing scoring 0.5 or more is built and scored a
+second time, and the second score is kept.
 
-The initial program is OpenEvolve's: a circle in the middle, a ring of 8 around
-it, an outer ring of 16 pushed back inside the square, and a last circle in a
-corner. It scores about **0.96**. AlphaEvolve reported about **2.635**.
+The initial program scores **0.364**: a sum of 0.96.
 
 Programs that optimize the packing may need more than the default 30 seconds;
 give them more with `--timeout`:
@@ -241,7 +243,8 @@ scipy==1.18.1
   removed with `docker image prune`.
 - The evaluation file itself is loaded on your machine as well, to check it
   before a run. If it imports one of these packages itself, install it in your
-  `.venv` too.
+  `.venv` too. numpy, which the examples' evaluation files import, is installed
+  with the development tools.
 
 ## How parents are chosen
 

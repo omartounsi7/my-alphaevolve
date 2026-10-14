@@ -30,18 +30,19 @@ RUN_SCRIPT = REPOSITORY_FOLDER / "scripts" / "run.py"
 EXAMPLE_FOLDER = REPOSITORY_FOLDER / "examples" / "function_minimization"
 
 # What the stand-in LLM server answers in the script tests: a program for the
-# function-minimization example that tries many random points and keeps the lowest
-RANDOM_SEARCH_REPLY = """\
-import random
+# function-minimization example that finds the global minimum with scipy
+MINIMIZE_REPLY = """\
+import numpy as np
+from scipy.optimize import minimize
 
 
-def search(target_function, lower_bounds, upper_bounds):
-    generator = random.Random(0)
-    points = [
-        [generator.uniform(low, high) for low, high in zip(lower_bounds, upper_bounds)]
-        for _ in range(2000)
-    ]
-    return min(points, key=target_function)
+def evaluate_function(x, y):
+    return np.sin(x) * np.cos(y) + np.sin(x * y) + (x**2 + y**2) / 20
+
+
+def run_search():
+    x, y = minimize(lambda point: evaluate_function(*point), [-1.5, 0.5]).x
+    return x, y, evaluate_function(x, y)
 """
 
 
@@ -345,7 +346,7 @@ class TestRunScript(unittest.TestCase):
 
     def setUp(self) -> None:
         # Runs before every test: a stand-in LLM server, stopped after the test
-        self.server = FakeLLMServer([RANDOM_SEARCH_REPLY])
+        self.server = FakeLLMServer([MINIMIZE_REPLY])
         self.addCleanup(self.server.stop)
 
     def launch(
@@ -386,7 +387,7 @@ class TestRunScript(unittest.TestCase):
         result = self.launch_example("--iterations", "2")
         # Return code 0 is how a program tells the system it finished without error
         self.assertEqual(result.returncode, 0, msg=result.stderr)
-        # The server's random search must beat the initial program and be reported
+        # The server's program must beat the initial program and be reported
         self.assertIn("Best program: Program(", result.stdout)
         self.assertIn("generation=1", result.stdout)
 
@@ -395,7 +396,7 @@ class TestRunScript(unittest.TestCase):
         self.assertEqual(len(self.server.requests), 1)
         body = self.server.requests[0]["body"]
         self.assertEqual(body["model"], "test-model")
-        self.assertIn("lower_bounds", body["messages"][0]["content"])
+        self.assertIn("run_search", body["messages"][0]["content"])
 
     def test_api_key_is_read_from_the_chosen_environment_variable(self) -> None:
         # os.environ holds this process's environment variables; add one for the script
@@ -437,7 +438,8 @@ class TestRunScript(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         self.assertIn("Evaluator: a Docker container per program", result.stdout)
-        self.assertIn("Iteration 1/1: child score=1.8", result.stdout)
+        # The global minimum scores about 1.5, the highest score.
+        self.assertIn("Iteration 1/1: child score=1.49", result.stdout)
 
     def test_workers_option_runs_iterations_at_once(self) -> None:
         result = self.launch_example("--iterations", "4", "--workers", "2")
@@ -457,7 +459,8 @@ class TestRunScript(unittest.TestCase):
 
     def test_characters_outside_the_system_encoding_are_printed(self) -> None:
         # A problem whose initial program has an arrow in it. The server's reply
-        # fails here, so the initial program stays the best and its code is printed.
+        # defines no answer, so the initial program stays the best and its code is printed.
+        server = serve(self, ["x = 1\n"])
         with tempfile.TemporaryDirectory() as folder_name:
             folder = Path(folder_name)
             initial = folder / "initial.py"
@@ -479,7 +482,7 @@ class TestRunScript(unittest.TestCase):
                 "--model",
                 "test-model",
                 "--llm-url",
-                self.server.url,
+                server.url,
                 "--iterations",
                 "1",
             )

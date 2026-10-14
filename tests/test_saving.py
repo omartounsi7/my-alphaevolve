@@ -163,7 +163,7 @@ class TestRunScriptOutput(unittest.TestCase):
     def setUp(self) -> None:
         # Runs before every test: a stand-in LLM server, stopped after the test.
         # Any reply will do here: these tests are about files, not about scores.
-        self.server = FakeLLMServer(["def search(f, low, high):\n    return list(high)\n"])
+        self.server = FakeLLMServer(["def run_search():\n    return 0.0, 0.0\n"])
         self.addCleanup(self.server.stop)
 
     def launch(self, output_folder: Path, iterations: int) -> subprocess.CompletedProcess[str]:

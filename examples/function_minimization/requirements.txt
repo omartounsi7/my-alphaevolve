@@ -1,4 +1,5 @@
 # Packages that programs for this problem may import, besides Python's standard library.
+# The same as in OpenEvolve, which lists scipy; numpy comes with it.
 # Exact versions keep scores comparable between runs.
 numpy==2.5.4
 scipy==1.18.1
