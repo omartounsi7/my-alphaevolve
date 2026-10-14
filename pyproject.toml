@@ -33,7 +33,8 @@ where = ["src"]
 
 [tool.mypy]
 # The folders mypy checks when run with no arguments
-files = ["src", "scripts", "tests", "examples"]
+# Each example is checked on its own (see the README): their files share names.
+files = ["src", "scripts", "tests"]
 # Where mypy finds the my_alphaevolve package when checking a single file
 mypy_path = "src"
 # Turn on every check, including "every function must have type hints"

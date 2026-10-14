@@ -9,7 +9,7 @@ scores the result, and a database keeps the programs to build on next.
 | Path | Contents |
 |---|---|
 | `src/my_alphaevolve/` | The algorithm's code (`Program`, `Database`, `Evaluator`, `Problem`, `PromptSampler`, `LLM`, the loop) |
-| `examples/` | Ready-made problems, one folder each |
+| `examples/` | Ready-made problems, one folder each: function minimization and circle packing |
 | `scripts/` | Files you launch directly |
 | `tests/` | Automatic checks |
 | `pyproject.toml` | Project description and tool settings |
@@ -161,6 +161,34 @@ different one, edit `target_function`, `LOWER_BOUNDS` and `UPPER_BOUNDS` in
 `target.py`; nothing else needs to change. The number of variables is the length
 of the two bounds lists.
 
+## Example: circle packing
+
+`examples/circle_packing/` is one of the problems of the AlphaEvolve paper:
+place 26 circles inside a square of side 1, without overlap, so that the sum of
+their radii is as large as possible. It is modelled on OpenEvolve's example of
+the same name.
+
+| File | Contents |
+|---|---|
+| `initial_program.py` | The problem description and `construct_packing()`, which returns the centers and radii |
+| `evaluation.py` | `evaluate`, which checks the packing and returns the sum of the radii |
+| `requirements.txt` | The packages programs may import: numpy and scipy |
+
+A packing fails if it does not have exactly 26 circles, if a circle leaves the
+square, if two circles overlap, or if a radius is negative. As in OpenEvolve,
+errors up to 1e-6 are tolerated. Centers and radii may be lists or numpy arrays.
+
+The initial program is OpenEvolve's: a circle in the middle, a ring of 8 around
+it, an outer ring of 16 pushed back inside the square, and a last circle in a
+corner. It scores about **0.96**. AlphaEvolve reported about **2.635**.
+
+Programs that optimize the packing may need more than the default 30 seconds;
+give them more with `--timeout`:
+
+```powershell
+.venv\Scripts\python.exe scripts\run.py examples\circle_packing\initial_program.py examples\circle_packing\evaluation.py --model qwen2.5-coder:3b --iterations 50 --timeout 120 --output runs\circle_packing
+```
+
 ## How programs are run
 
 Programs written by an LLM cannot be trusted, so by default each one runs in its
@@ -278,8 +306,10 @@ The run commands use a local Ollama model; see "Choosing the LLM" for others.
 # Run the tests
 .venv\Scripts\python.exe -m unittest discover tests
 
-# Check the types
+# Check the types, then each example on its own (their files share names)
 .venv\Scripts\python.exe -m mypy
+.venv\Scripts\python.exe -m mypy examples\function_minimization
+.venv\Scripts\python.exe -m mypy examples\circle_packing
 
 # Check for common mistakes and style problems
 .venv\Scripts\python.exe -m ruff check
