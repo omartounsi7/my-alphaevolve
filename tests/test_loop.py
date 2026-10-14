@@ -111,6 +111,11 @@ class TestRunMyAlphaevolve(unittest.TestCase):
         self.assertIn("Problem description:\nMake answer as large as possible.", prompt)
         self.assertIn("answer = 3.5", prompt)
 
+    def test_prompt_names_the_packages_programs_may_import(self) -> None:
+        server = serve(self, ["answer = 4.5\n"])
+        self.run_quietly(Problem(INITIAL_CODE, packages=["numpy"]), server.llm())
+        self.assertIn("standard library and these packages: numpy.", server.prompts[0])
+
     def test_database_holds_the_initial_program_and_its_child(self) -> None:
         database = self.run_quietly(self.problem, prepared_llm(self, ["answer = 4.5\n"]))
         self.assertEqual(len(database.programs), 2)

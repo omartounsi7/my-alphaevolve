@@ -4,12 +4,16 @@ The programs are scored in the test process, since these tests check the example
 rules; the Docker evaluator has its own tests.
 """
 
+import contextlib
+import io
 import runpy
 import unittest
 from pathlib import Path
 
+from docker_check import docker_is_available
 from doubles import InProcessEvaluator
 
+from my_alphaevolve.evaluator import DockerEvaluator
 from my_alphaevolve.problem import load_problem, load_score_function
 from my_alphaevolve.program import Program
 
@@ -121,6 +125,43 @@ class TestFunctionMinimization(unittest.TestCase):
             # subTest reports each bad program separately if several fail
             with self.subTest(reason=reason):
                 self.assertEqual(self.score_of(code), self.evaluator.failure_score)
+
+
+@unittest.skipUnless(docker_is_available(), "Docker is not available")
+class TestFunctionMinimizationInDocker(unittest.TestCase):
+    """Checks that the example's packages are installed in its container, and nothing else.
+
+    The first run builds the example's image, which downloads its packages.
+    """
+
+    def setUp(self) -> None:
+        self.evaluator = DockerEvaluator(EXAMPLE_FOLDER / "evaluation.py")
+
+    def test_example_lists_its_packages(self) -> None:
+        problem = load_problem(
+            EXAMPLE_FOLDER / "initial_program.py", EXAMPLE_FOLDER / "evaluation.py"
+        )
+        self.assertEqual(problem.packages, ["numpy", "scipy"])
+
+    def test_program_may_use_the_listed_packages(self) -> None:
+        code = (
+            "import numpy\n"
+            "from scipy.optimize import minimize\n\n"
+            "def search(target_function, lower_bounds, upper_bounds):\n"
+            "    start = numpy.zeros(len(lower_bounds))\n"
+            "    result = minimize(lambda point: target_function(list(point)), start,\n"
+            "                      bounds=list(zip(lower_bounds, upper_bounds)))\n"
+            "    return [float(x) for x in result.x]\n"
+        )
+        score = self.evaluator.execute(Program(code))
+        self.assertNotEqual(score, self.evaluator.failure_score)
+
+    def test_program_cannot_use_other_packages(self) -> None:
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            score = self.evaluator.execute(Program("import pandas\n"))
+        self.assertEqual(score, self.evaluator.failure_score)
+        self.assertIn("No module named 'pandas'", printed.getvalue())
 
 
 if __name__ == "__main__":

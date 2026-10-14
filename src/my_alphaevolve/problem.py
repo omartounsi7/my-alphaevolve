@@ -7,9 +7,13 @@ The user supplies two things, each as a Python file:
 - the evaluation criteria: a file defining a function called evaluate, which
   receives every name a candidate program defined as a dictionary and returns
   that program's score (a number, higher is better).
+
+Next to the evaluation file, an optional requirements.txt lists the packages
+programs may import besides Python's standard library.
 """
 
 import ast
+import re
 import runpy
 import sys
 from collections.abc import Callable
@@ -22,6 +26,9 @@ ScoreFunction = Callable[[dict[str, Any]], float]
 
 # The name of the function the user's evaluation file must define
 EVALUATE_FUNCTION_NAME = "evaluate"
+
+# The file, next to the evaluation file, listing the packages programs may import.
+REQUIREMENTS_FILE_NAME = "requirements.txt"
 
 
 def read_description(initial_code: str) -> str:
@@ -38,10 +45,40 @@ def read_description(initial_code: str) -> str:
     return description
 
 
+def read_requirements(folder: Path) -> list[str]:
+    """Return the requirements listed in the folder's requirements.txt, such as "numpy==2.5.4".
+
+    Blank lines and comments are left out; no file means no requirements.
+    Raises ValueError for a pip option such as "--index-url": only packages may be listed.
+    """
+    path = folder / REQUIREMENTS_FILE_NAME
+    if not path.is_file():
+        return []
+    requirements = []
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
+        requirement = line.split("#", 1)[0].strip()
+        if not requirement:
+            continue
+        if requirement.startswith("-"):
+            raise ValueError(f"{path} may only list packages, not options such as {requirement!r}")
+        requirements.append(requirement)
+    return requirements
+
+
+def package_name(requirement: str) -> str:
+    """Return the package's name in a requirement: "numpy" for "numpy==2.5.4"."""
+    return re.split(r"[\s\[<>=!~;@]", requirement, maxsplit=1)[0]
+
+
 class Problem:
     """One problem to solve: an initial solution plus the file that scores solutions."""
 
-    def __init__(self, initial_code: str, evaluation_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        initial_code: str,
+        evaluation_path: Path | None = None,
+        packages: list[str] | None = None,
+    ) -> None:
         """Store the user's inputs."""
         # The source code of the starting program.
         self.initial_code: str = initial_code
@@ -49,6 +86,8 @@ class Problem:
         self.evaluation_path: Path | None = evaluation_path
         # What the problem is, in plain words. Shown to the LLM in every prompt
         self.description: str = read_description(initial_code)
+        # The packages programs may import besides the standard library.
+        self.packages: list[str] = list(packages or [])
 
 
 def load_score_function(evaluation_path: Path) -> ScoreFunction:
@@ -93,5 +132,9 @@ def load_problem(initial_program_path: Path, evaluation_path: Path) -> Problem:
     # Load the score function.
     load_score_function(evaluation_path)
 
+    # Read the packages programs may import.
+    requirements = read_requirements(evaluation_path.resolve().parent)
+    packages = [package_name(requirement) for requirement in requirements]
+
     # Return the Problem.
-    return Problem(initial_code, evaluation_path.resolve())
+    return Problem(initial_code, evaluation_path.resolve(), packages)

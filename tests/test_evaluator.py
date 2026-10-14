@@ -12,7 +12,7 @@ from typing import Any
 
 from docker_check import docker_is_available
 
-from my_alphaevolve.evaluator import DockerEvaluator, score_program
+from my_alphaevolve.evaluator import DockerEvaluator, docker_image_tag, score_program
 from my_alphaevolve.problem import ScoreFunction
 from my_alphaevolve.program import Program
 
@@ -197,6 +197,21 @@ class TestDockerEvaluator(unittest.TestCase):
     def test_time_limit_must_be_above_zero(self) -> None:
         with self.assertRaises(ValueError):
             DockerEvaluator(self.evaluation_path, timeout_seconds=0)
+
+
+class TestDockerImageTag(unittest.TestCase):
+    """Checks that the image is rebuilt exactly when the packages change."""
+
+    def test_same_requirements_give_the_same_image(self) -> None:
+        self.assertEqual(docker_image_tag(["numpy==2.5.4"]), docker_image_tag(["numpy==2.5.4"]))
+
+    def test_different_requirements_give_a_different_image(self) -> None:
+        tags = {
+            docker_image_tag([]),
+            docker_image_tag(["numpy==2.5.4"]),
+            docker_image_tag(["numpy==2.5.3"]),
+        }
+        self.assertEqual(len(tags), 3)
 
 
 if __name__ == "__main__":

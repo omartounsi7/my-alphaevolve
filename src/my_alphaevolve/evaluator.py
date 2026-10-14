@@ -15,7 +15,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
-from my_alphaevolve.problem import ScoreFunction
+from my_alphaevolve.problem import ScoreFunction, read_requirements
 from my_alphaevolve.program import Program
 
 # How long one program may run, in seconds.
@@ -68,12 +68,13 @@ class DockerUnavailableError(RuntimeError):
     """Raised when Docker is not installed or not running."""
 
 
-def docker_image_tag() -> str:
-    """Return the image's name, tagged with a fingerprint of the Dockerfile.
+def docker_image_tag(requirements: list[str]) -> str:
+    """Return the image's name, tagged with a fingerprint of the Dockerfile and the requirements.
 
-    Editing the Dockerfile changes the tag, so the image is rebuilt automatically.
+    Changing either changes the tag, so the image is rebuilt automatically.
     """
-    fingerprint = hashlib.sha256(DOCKERFILE_PATH.read_bytes()).hexdigest()[:12]
+    content = DOCKERFILE_PATH.read_bytes() + "\n".join(requirements).encode("utf-8")
+    fingerprint = hashlib.sha256(content).hexdigest()[:12]
     return f"{DOCKER_IMAGE_NAME}:{fingerprint}"
 
 
@@ -85,7 +86,9 @@ class DockerEvaluator(Evaluator):
     It sees only the my_alphaevolve package and the problem's folder, both read-only.
     Stopping the container stops every process the program started.
 
-    The image is built on first use, which downloads Python's official image once.
+    The image is built on first use, with the packages listed in the requirements.txt
+    next to the evaluation file. Building downloads Python's official image and those
+    packages; the containers themselves have no network.
     """
 
     def __init__(
@@ -109,7 +112,9 @@ class DockerEvaluator(Evaluator):
         self.memory_limit: str = memory_limit
         self.cpu_limit: float = cpu_limit
         self.process_limit: int = process_limit
-        self.image: str = docker_image_tag()
+        # The packages installed in the image, from the problem's requirements.txt.
+        self.requirements: list[str] = read_requirements(self.evaluation_path.parent)
+        self.image: str = docker_image_tag(self.requirements)
         self._check_docker()
         self._ensure_image()
 
@@ -129,13 +134,14 @@ class DockerEvaluator(Evaluator):
         if inspect.returncode == 0:
             return
         print(f"Building the Docker image {self.image} (only once)...")
-        build_command = [
-            "docker", "build",
-            "--tag", self.image,
-            "--file", str(DOCKERFILE_PATH),
-            str(DOCKERFILE_PATH.parent),
-        ]  # fmt: skip
-        subprocess.run(build_command, check=True)
+        # The build sees only this folder: the Dockerfile and the requirements.
+        with tempfile.TemporaryDirectory() as build_folder:
+            shutil.copyfile(DOCKERFILE_PATH, Path(build_folder) / "Dockerfile")
+            requirements_text = "".join(f"{requirement}\n" for requirement in self.requirements)
+            (Path(build_folder) / "requirements.txt").write_text(
+                requirements_text, encoding="utf-8"
+            )
+            subprocess.run(["docker", "build", "--tag", self.image, build_folder], check=True)
 
     def _run_command(self, container_name: str) -> list[str]:
         package_folder = Path(__file__).resolve().parent

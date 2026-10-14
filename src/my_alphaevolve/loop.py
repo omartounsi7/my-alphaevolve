@@ -47,7 +47,7 @@ def run_my_alphaevolve(
         raise ValueError(f"iterations must be 0 or more, got {iterations}")
 
     database = Database(seed=seed)
-    prompt_sampler = PromptSampler(problem.description)
+    prompt_sampler = PromptSampler(problem.description, packages=problem.packages)
     storage = RunStorage(output_folder) if output_folder is not None else None
 
     # The programs of an earlier run in the same folder; empty for a new run.

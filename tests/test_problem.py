@@ -5,7 +5,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from my_alphaevolve.problem import Problem, load_problem, load_score_function
+from my_alphaevolve.problem import (
+    Problem,
+    load_problem,
+    load_score_function,
+    package_name,
+    read_requirements,
+)
 
 # A minimal valid initial program: a docstring describing the problem, then the code
 INITIAL_CODE = '"""Make answer as large as possible."""\n\nanswer = 42\n'
@@ -169,6 +175,54 @@ class TestLoadProblem(unittest.TestCase):
         with self.assertRaises(ZeroDivisionError):
             load_score_function(evaluation)
         self.assertNotIn("my_alphaevolve_test_helper", sys.modules)
+
+
+class TestRequirements(unittest.TestCase):
+    """Checks on reading the packages programs may import."""
+
+    def setUp(self) -> None:
+        temporary_folder = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary_folder.cleanup)
+        self.folder = Path(temporary_folder.name)
+
+    def write_requirements(self, content: str) -> None:
+        (self.folder / "requirements.txt").write_text(content, encoding="utf-8")
+
+    def test_no_file_means_no_requirements(self) -> None:
+        self.assertEqual(read_requirements(self.folder), [])
+
+    def test_comments_and_blank_lines_are_left_out(self) -> None:
+        self.write_requirements("# Packages\nnumpy==2.5.4\n\nscipy>=1.18  # science\n")
+        self.assertEqual(read_requirements(self.folder), ["numpy==2.5.4", "scipy>=1.18"])
+
+    def test_pip_options_are_rejected(self) -> None:
+        for option in ("--index-url https://example.com", "-r other.txt", "-e ."):
+            with self.subTest(option=option), self.assertRaises(ValueError):
+                self.write_requirements(f"numpy\n{option}\n")
+                read_requirements(self.folder)
+
+    def test_package_name_is_the_requirement_without_its_version(self) -> None:
+        cases = {
+            "numpy": "numpy",
+            "numpy==2.5.4": "numpy",
+            "scipy >= 1.18": "scipy",
+            "requests[socks]~=2.32": "requests",
+            "pywin32; sys_platform == 'win32'": "pywin32",
+        }
+        for requirement, name in cases.items():
+            with self.subTest(requirement=requirement):
+                self.assertEqual(package_name(requirement), name)
+
+    def test_loaded_problem_knows_its_packages(self) -> None:
+        self.write_requirements("numpy==2.5.4\nscipy==1.18.1\n")
+        initial = self.folder / "initial.py"
+        initial.write_text(INITIAL_CODE, encoding="utf-8")
+        evaluation = self.folder / "evaluation.py"
+        evaluation.write_text(EVALUATION_CODE, encoding="utf-8")
+        self.assertEqual(load_problem(initial, evaluation).packages, ["numpy", "scipy"])
+
+    def test_problem_without_requirements_has_no_packages(self) -> None:
+        self.assertEqual(Problem(INITIAL_CODE).packages, [])
 
 
 if __name__ == "__main__":

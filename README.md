@@ -103,6 +103,9 @@ As in AlphaEvolve, you describe a problem with two Python files:
   program's score as a number (higher is better). It should raise an error if
   the program breaks the problem's rules.
 
+Optionally, a `requirements.txt` next to the evaluation file lists the packages
+programs may import (see "Packages programs may import").
+
 ### The initial solution must describe the problem
 
 The initial solution **must start with a docstring that describes the problem**.
@@ -131,13 +134,14 @@ by the LLM do not need to keep the docstring.
 ## Example: function minimization
 
 `examples/function_minimization/` asks for a program that finds the lowest point
-of a function of one or several variables. It has three files:
+of a function of one or several variables. It has four files:
 
 | File | Contents |
 |---|---|
 | `initial_program.py` | The problem description and a deliberately poor first `search` |
 | `evaluation.py` | `evaluate`, which calls the program's `search` and scores its answer |
 | `target.py` | The function to minimize and the region to search |
+| `requirements.txt` | The packages programs may import: numpy and scipy |
 
 Programs do not know the function in advance. `search` receives it as an
 argument, together with the bounds, and has to explore it by calling it:
@@ -176,13 +180,40 @@ A program that breaks any of these rules fails, and the run carries on.
 Docker must be installed and running: Docker Desktop on Windows and macOS, or
 Docker Engine on Linux. On first use, the run builds the image the containers
 start from (`src/my_alphaevolve/evaluation.Dockerfile`), which downloads Python's
-official image once. Starting a container costs about one second per program.
+official image and the problem's packages once. Starting a container costs
+about one second per program.
 
 There is no way to run programs outside a container: a run stops at once if
 Docker is not available.
 
 The evaluation file is loaded again for every program, so slow work at the top
 of that file is repeated each time.
+
+## Packages programs may import
+
+Programs may import Python's standard library, plus the packages listed in a
+`requirements.txt` next to the evaluation file, one per line:
+
+```text
+# Comments and blank lines are ignored.
+numpy==2.5.4
+scipy==1.18.1
+```
+
+- The packages are installed once, when the evaluation image is built; the
+  containers themselves have no network. Nothing is ever installed because the
+  LLM asks for it: models invent package names, and attackers publish packages
+  under such names.
+- Every prompt tells the LLM which packages it may use. A program importing
+  anything else fails with `No module named ...`.
+- Give exact versions (`==`): the same program then gets the same score from one
+  run to the next.
+- Only packages may be listed: pip options such as `--index-url` are refused.
+- Changing the file builds a new image on the next run. Old images can be
+  removed with `docker image prune`.
+- The evaluation file itself is loaded on your machine as well, to check it
+  before a run. If it imports one of these packages itself, install it in your
+  `.venv` too.
 
 ## How parents are chosen
 

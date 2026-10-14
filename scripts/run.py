@@ -114,6 +114,7 @@ def main() -> None:
 
     # Load the problem.
     problem = load_problem(args.initial_program, args.evaluation_file)
+    print(f"Packages programs may import: {', '.join(problem.packages) or 'none'}")
 
     # Get the LLM.
     api_key = os.environ.get(args.api_key_env)

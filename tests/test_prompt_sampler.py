@@ -47,5 +47,22 @@ class TestPromptSampler(unittest.TestCase):
             self.prompt_sampler.build(Program("x = 1\n"))
 
 
+class TestAllowedPackages(unittest.TestCase):
+    """Checks on the sentence telling the LLM which packages it may use."""
+
+    def test_without_packages_only_the_standard_library_is_allowed(self) -> None:
+        prompt = PromptSampler("A problem.").build(Program("x = 1\n", score=1.0))
+        self.assertIn("may import only Python's standard library", prompt)
+
+    def test_listed_packages_are_named(self) -> None:
+        prompt_sampler = PromptSampler("A problem.", packages=["numpy", "scipy"])
+        prompt = prompt_sampler.build(Program("x = 1\n", score=1.0))
+        self.assertIn("standard library and these packages: numpy, scipy.", prompt)
+
+    def test_rule_comes_before_the_reply_instructions(self) -> None:
+        prompt = PromptSampler("A problem.").build(Program("x = 1\n", score=1.0))
+        self.assertLess(prompt.index("may import"), prompt.index("Reply with only"))
+
+
 if __name__ == "__main__":
     unittest.main()
