@@ -246,15 +246,27 @@ scipy==1.18.1
 ## How parents are chosen
 
 Each iteration improves one existing program, the parent. The database picks it
-with one of two strategies, chosen at random each time:
+with MAP-Elites, the algorithm AlphaEvolve builds on, in its simple form:
 
-- **Exploitation, 70% of the time**: a random program among the 10 best. This
-  refines what already works.
-- **Exploration, 30% of the time**: a random program among all those that work,
-  good or bad. This gives less successful ideas a chance to lead somewhere.
+1. Every working program is described by two features of its code, the same
+   ones OpenEvolve uses by default:
+   - **complexity**: the length of the code;
+   - **diversity**: how different the code is, on average, from the first 20
+     working programs (a quick estimate from differences in length, number of
+     lines and characters used).
+2. Each feature's range is cut into 10 equal bins, which makes a grid of at
+   most 100 cells. Each program falls in one cell.
+3. Each cell keeps only its best program, its **elite**. A program replaces an
+   elite only with a strictly higher score.
+4. The parent is an elite picked at random, every cell having the same chance.
 
-Programs whose evaluation failed are kept in the database and in the saved run,
-but are never chosen as parents.
+Keeping one elite per kind of program, instead of only the very best programs,
+preserves variety: an unusual program that scores less well can still be
+improved, and may lead somewhere the best programs would not.
+
+The bins follow the range of values seen so far, so the grid is rebuilt from
+all working programs each time a parent is picked. Programs whose evaluation
+failed are kept in the database and in the saved run, but never enter the grid.
 
 The choices are random and differ from run to run. Add `--seed` with a whole
 number, for example `--seed 7`, to get the same choices again. This repeats the
