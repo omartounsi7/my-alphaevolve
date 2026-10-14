@@ -172,6 +172,8 @@ class TestRunScriptOutput(unittest.TestCase):
                 "test-model",
                 "--llm-url",
                 self.server.url,
+                "--evaluator",
+                "process",
                 "--iterations",
                 str(iterations),
                 "--output",

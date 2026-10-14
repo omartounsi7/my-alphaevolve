@@ -32,6 +32,8 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -e ".[dev]"
 ```
 
+Runs also need Docker, installed and running (see "How programs are run").
+
 ## Choosing the LLM
 
 The LLM is reached through the "OpenAI-compatible" interface, which is offered
@@ -156,23 +158,32 @@ of the two bounds lists.
 
 ## How programs are run
 
-Programs written by an LLM cannot be trusted to behave, so each one is run in
-its own separate Python process:
+Programs written by an LLM cannot be trusted, so by default each one runs in its
+own [Docker](https://www.docker.com) container, created for that program and
+removed afterwards. Inside it, the program:
 
-- **Time limit.** A program that takes longer than `--timeout` seconds (30 by
-  default) is stopped and counted as failed. An infinite loop cannot hang a run.
-- **Crashes stay contained.** A program that crashes or exits only ends its own
-  process; the run carries on.
-- **No leftovers.** Nothing a program changes in Python reaches the next program
-  or the run itself.
+- has **no network**;
+- can only **write** in a temporary folder that disappears with the container;
+- sees only the `my_alphaevolve` package and the problem's folder, both **read-only**;
+- runs as a user **without any rights**;
+- has at most **1 GB of memory**, one CPU and 64 processes;
+- is **stopped after `--timeout` seconds** (30 by default), together with every
+  process it started.
 
-Each of these processes loads the evaluation file itself, so slow work at the
-top of that file is repeated for every program. Starting a process costs about
-a tenth of a second per program.
+A program that breaks any of these rules fails, and the run carries on.
 
-This is **not a security barrier**: a program still runs with your permissions
-and can read and write your files. Read what the LLM produces before trusting a
-long unattended run.
+Docker must be installed and running: Docker Desktop on Windows and macOS, or
+Docker Engine on Linux. On first use, the run builds the image the containers
+start from (`src/my_alphaevolve/evaluation.Dockerfile`), which downloads Python's
+official image once. Starting a container costs about one second per program.
+
+On a machine without Docker, `--evaluator process` runs each program in a
+separate Python process instead. It keeps the time limit and keeps crashes from
+reaching the run, but it is **not a security barrier**: the program runs with
+your permissions and can read and write your files.
+
+In both cases the evaluation file is loaded again for every program, so slow
+work at the top of that file is repeated each time.
 
 ## How parents are chosen
 
@@ -230,6 +241,9 @@ The run commands use a local Ollama model; see "Choosing the LLM" for others.
 
 # The same, saved in a folder; launch it again to continue the run for 50 more iterations
 .venv\Scripts\python.exe scripts\run.py examples\function_minimization\initial_program.py examples\function_minimization\evaluation.py --model qwen2.5-coder:3b --iterations 50 --output runs\function_minimization
+
+# The same, on a machine without Docker
+.venv\Scripts\python.exe scripts\run.py examples\function_minimization\initial_program.py examples\function_minimization\evaluation.py --model qwen2.5-coder:3b --evaluator process
 
 # The same, stopping any program that runs for more than 5 seconds
 .venv\Scripts\python.exe scripts\run.py examples\function_minimization\initial_program.py examples\function_minimization\evaluation.py --model qwen2.5-coder:3b --timeout 5

@@ -23,6 +23,10 @@ dev = [
     "ruff>=0.6",   # linter and formatter: finds common bugs and keeps the style uniform
 ]
 
+[tool.setuptools.package-data]
+# The image definition DockerEvaluator builds from
+my_alphaevolve = ["evaluation.Dockerfile"]
+
 [tool.setuptools.packages.find]
 # Tells setuptools that the package lives inside the src folder
 where = ["src"]

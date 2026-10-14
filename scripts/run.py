@@ -3,7 +3,8 @@
 Usage:
     python scripts/run.py INITIAL_PROGRAM EVALUATION_FILE --model MODEL
         [--llm-url URL] [--api-key-env VARIABLE] [--max-reply-tokens N]
-        [--iterations N] [--output FOLDER] [--timeout SECONDS] [--seed N]
+        [--iterations N] [--output FOLDER] [--timeout SECONDS]
+        [--evaluator docker|process] [--seed N]
 """
 
 import argparse
@@ -12,7 +13,12 @@ import os
 import sys
 from pathlib import Path
 
-from my_alphaevolve.evaluator import DEFAULT_TIMEOUT_SECONDS, ProcessEvaluator
+from my_alphaevolve.evaluator import (
+    DEFAULT_TIMEOUT_SECONDS,
+    DockerEvaluator,
+    Evaluator,
+    ProcessEvaluator,
+)
 from my_alphaevolve.llm import DEFAULT_LLM_URL, DEFAULT_MAX_REPLY_TOKENS, OpenAICompatibleLLM
 from my_alphaevolve.loop import run_my_alphaevolve
 from my_alphaevolve.problem import load_problem
@@ -95,6 +101,15 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--evaluator",
+        choices=["docker", "process"],
+        default="docker",
+        help=(
+            "where programs are run: in a Docker container (safer) or in a separate "
+            "process (for machines without Docker) (default: docker)"
+        ),
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=None,
@@ -125,7 +140,13 @@ def main() -> None:
     print(f"LLM: {args.model} at {args.llm_url}")
 
     # Load the evaluator.
-    evaluator = ProcessEvaluator(args.evaluation_file.resolve(), args.timeout)
+    evaluator: Evaluator
+    if args.evaluator == "docker":
+        evaluator = DockerEvaluator(args.evaluation_file, args.timeout)
+        print(f"Evaluator: a Docker container per program ({evaluator.image})")
+    else:
+        evaluator = ProcessEvaluator(args.evaluation_file.resolve(), args.timeout)
+        print("Evaluator: a separate process per program, without Docker's protections")
 
     # Run the loop and collect the final database.
     database = run_my_alphaevolve(problem, llm, evaluator, args.iterations, args.output, args.seed)

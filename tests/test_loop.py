@@ -10,6 +10,7 @@ import unittest
 from pathlib import Path
 from typing import Any
 
+from docker_check import docker_is_available
 from fake_llm_server import FakeLLMServer
 
 from my_alphaevolve.database import Database
@@ -267,6 +268,8 @@ class TestRunScript(unittest.TestCase):
             "test-model",
             "--llm-url",
             self.server.url,
+            "--evaluator",
+            "process",
             *arguments,
             environment=environment,
         )
@@ -313,6 +316,22 @@ class TestRunScript(unittest.TestCase):
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         self.assertIn("Iteration 2/2", result.stdout)
 
+    @unittest.skipUnless(docker_is_available(), "Docker is not available")
+    def test_programs_run_in_docker_by_default(self) -> None:
+        result = self.launch(
+            str(EXAMPLE_FOLDER / "initial_program.py"),
+            str(EXAMPLE_FOLDER / "evaluation.py"),
+            "--model",
+            "test-model",
+            "--llm-url",
+            self.server.url,
+            "--iterations",
+            "1",
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertIn("Evaluator: a Docker container per program", result.stdout)
+        self.assertIn("Iteration 1/1: child score=1.8", result.stdout)
+
     def test_iterations_option_sets_the_length_of_the_run(self) -> None:
         result = self.launch_example("--iterations", "3")
         self.assertEqual(result.returncode, 0, msg=result.stderr)
@@ -344,6 +363,8 @@ class TestRunScript(unittest.TestCase):
                 "test-model",
                 "--llm-url",
                 self.server.url,
+                "--evaluator",
+                "process",
                 "--iterations",
                 "1",
             )

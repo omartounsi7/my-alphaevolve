@@ -2,15 +2,20 @@
 
 import contextlib
 import io
+import json
 import math
 import random
+import subprocess
+import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
 from typing import Any
 
-from my_alphaevolve.evaluator import InProcessEvaluator, ProcessEvaluator
+from docker_check import docker_is_available
+
+from my_alphaevolve.evaluator import DockerEvaluator, InProcessEvaluator, ProcessEvaluator
 from my_alphaevolve.problem import ScoreFunction
 from my_alphaevolve.program import Program
 
@@ -187,6 +192,127 @@ class TestProcessEvaluator(unittest.TestCase):
     def test_time_limit_must_be_above_zero(self) -> None:
         with self.assertRaises(ValueError):
             ProcessEvaluator(self.evaluation_path, timeout_seconds=0)
+
+
+class TestContainerWorker(unittest.TestCase):
+    """Checks on the script that runs inside the container, run here without Docker."""
+
+    def setUp(self) -> None:
+        temporary_folder = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary_folder.cleanup)
+        self.evaluation_path = Path(temporary_folder.name) / "evaluation.py"
+        self.evaluation_path.write_text(
+            "def evaluate(namespace):\n    return float(namespace['answer'])\n", encoding="utf-8"
+        )
+
+    def run_worker(self, code: str) -> subprocess.CompletedProcess[str]:
+        """Run the worker on a program, as the container does."""
+        return subprocess.run(
+            [sys.executable, "-m", "my_alphaevolve.container_worker", str(self.evaluation_path)],
+            input=code,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
+        )
+
+    def test_score_is_the_last_line_of_the_output(self) -> None:
+        result = self.run_worker("answer = 2.5\n")
+        self.assertEqual(json.loads(result.stdout.splitlines()[-1]), {"status": "ok", "score": 2.5})
+
+    def test_failure_is_reported_with_its_reason(self) -> None:
+        result = self.run_worker("answer = 1 / 0\n")
+        reply = json.loads(result.stdout.splitlines()[-1])
+        self.assertEqual(reply["status"], "error")
+        self.assertIn("ZeroDivisionError", reply["message"])
+
+    def test_what_the_program_prints_does_not_mix_with_the_result(self) -> None:
+        result = self.run_worker("print('hello')\nanswer = 2.5\n")
+        self.assertEqual(result.stdout.strip().splitlines(), ['{"status": "ok", "score": 2.5}'])
+        self.assertIn("hello", result.stderr)
+
+
+@unittest.skipUnless(docker_is_available(), "Docker is not available")
+class TestDockerEvaluator(unittest.TestCase):
+    """Checks on DockerEvaluator. Each evaluation starts a real container."""
+
+    def setUp(self) -> None:
+        temporary_folder = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary_folder.cleanup)
+        self.folder = Path(temporary_folder.name)
+        (self.folder / "my_alphaevolve_evaluator_test_helper.py").write_text(
+            "BONUS = 1.0\n", encoding="utf-8"
+        )
+        self.evaluation_path = self.folder / "evaluation.py"
+        self.evaluation_path.write_text(EVALUATION_CODE, encoding="utf-8")
+        self.evaluator = DockerEvaluator(self.evaluation_path, timeout_seconds=60.0)
+
+    def execute_quietly(self, code: str, evaluator: DockerEvaluator | None = None) -> float:
+        """Evaluate a piece of code without showing the failure messages the parent prints."""
+        with contextlib.redirect_stdout(io.StringIO()):
+            return (evaluator or self.evaluator).execute(Program(code))
+
+    def failure_message(self, code: str) -> str:
+        """Evaluate a piece of code and return what the evaluator printed."""
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            self.evaluator.execute(Program(code))
+        return printed.getvalue()
+
+    def test_score_comes_from_the_evaluation_file_and_its_helper(self) -> None:
+        self.assertEqual(self.evaluator.execute(Program("answer = 9\n")), 4.0)
+
+    def test_failing_programs_get_the_failure_score(self) -> None:
+        bad_programs = {
+            "crash while running": "answer = 1 / 0\n",
+            "program ends its process": "import sys\nsys.exit(0)\n",
+        }
+        for reason, code in bad_programs.items():
+            with self.subTest(reason=reason):
+                self.assertEqual(self.execute_quietly(code), self.evaluator.failure_score)
+
+    def test_program_has_no_network(self) -> None:
+        code = "import socket\nsocket.create_connection(('1.1.1.1', 53), timeout=3)\nanswer = 9\n"
+        self.assertEqual(self.execute_quietly(code), self.evaluator.failure_score)
+
+    def test_program_cannot_write_outside_its_temporary_folder(self) -> None:
+        message = self.failure_message("open('/problem/evaluation.py', 'w').write('x')\n")
+        self.assertIn("Read-only file system", message)
+        self.assertEqual(self.evaluation_path.read_text(encoding="utf-8"), EVALUATION_CODE)
+
+    def test_program_may_write_in_its_temporary_folder(self) -> None:
+        code = "open('/tmp/notes.txt', 'w').write('x')\nanswer = 9\n"
+        self.assertEqual(self.evaluator.execute(Program(code)), 4.0)
+
+    def test_program_that_never_ends_is_stopped_with_everything_it_started(self) -> None:
+        impatient_evaluator = DockerEvaluator(self.evaluation_path, timeout_seconds=5.0)
+        code = (
+            "import subprocess, sys\n"
+            "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(300)'])\n"
+            "while True:\n    pass\n"
+        )
+        self.assertEqual(
+            self.execute_quietly(code, impatient_evaluator), impatient_evaluator.failure_score
+        )
+        running = subprocess.run(
+            ["docker", "ps", "--quiet", "--filter", f"ancestor={impatient_evaluator.image}"],
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout
+        self.assertEqual(running.strip(), "")
+
+    def test_program_using_too_much_memory_is_stopped(self) -> None:
+        message = self.failure_message("data = bytearray(3 * 1024 ** 3)\n")
+        self.assertIn("too much memory", message)
+
+    def test_characters_outside_plain_english_survive(self) -> None:
+        message = self.failure_message("x = 1\n")
+        self.assertIn("answer → a number", message)
+
+    def test_time_limit_must_be_above_zero(self) -> None:
+        with self.assertRaises(ValueError):
+            DockerEvaluator(self.evaluation_path, timeout_seconds=0)
 
 
 if __name__ == "__main__":
