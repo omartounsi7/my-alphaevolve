@@ -4,7 +4,7 @@ Usage:
     python scripts/run.py INITIAL_PROGRAM EVALUATION_FILE --model MODEL
         [--llm-url URL] [--api-key-env VARIABLE] [--max-reply-tokens N]
         [--iterations N] [--output FOLDER] [--timeout SECONDS]
-        [--seed N]
+        [--workers N] [--seed N]
 """
 
 import argparse
@@ -15,7 +15,7 @@ from pathlib import Path
 
 from my_alphaevolve.evaluator import DEFAULT_TIMEOUT_SECONDS, DockerEvaluator
 from my_alphaevolve.llm import DEFAULT_LLM_URL, DEFAULT_MAX_REPLY_TOKENS, OpenAICompatibleLLM
-from my_alphaevolve.loop import run_my_alphaevolve
+from my_alphaevolve.loop import DEFAULT_WORKERS, run_my_alphaevolve
 from my_alphaevolve.problem import load_problem
 
 DEFAULT_ITERATIONS = 10
@@ -96,6 +96,15 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--workers",
+        type=int,
+        default=DEFAULT_WORKERS,
+        help=(
+            "how many programs to generate and evaluate at once, each in its own "
+            f"container (default: {DEFAULT_WORKERS})"
+        ),
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=None,
@@ -109,6 +118,8 @@ def main() -> None:
         parser.error("--iterations must be 0 or more")
     if args.timeout <= 0:
         parser.error("--timeout must be above 0")
+    if args.workers < 1:
+        parser.error("--workers must be 1 or more")
     if args.max_reply_tokens < 0:
         parser.error("--max-reply-tokens must be 0 or more")
 
@@ -131,7 +142,9 @@ def main() -> None:
     print(f"Evaluator: a Docker container per program ({evaluator.image})")
 
     # Run the loop and collect the final database.
-    database = run_my_alphaevolve(problem, llm, evaluator, args.iterations, args.output, args.seed)
+    database = run_my_alphaevolve(
+        problem, llm, evaluator, args.iterations, args.output, args.seed, args.workers
+    )
 
     # Print the best program found.
     best_program = database.get_best_program()

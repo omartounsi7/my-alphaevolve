@@ -1,11 +1,14 @@
 """Checks that the main loop and the command-line script run from start to finish."""
 
+import _thread
 import contextlib
 import io
 import os
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from typing import Any
@@ -70,6 +73,45 @@ class UnreliableLLM(LLM):
         return self.reply
 
 
+class SlowLLM(LLM):
+    """An LLM that takes a while to answer and records how many calls overlap.
+
+    It can also fail, or press Ctrl+C, on a chosen call.
+    """
+
+    def __init__(
+        self,
+        reply: str,
+        failing_calls: set[int] | None = None,
+        interrupt_on_call: int | None = None,
+    ) -> None:
+        self.reply = reply
+        self.failing_calls = failing_calls or set()
+        self.interrupt_on_call = interrupt_on_call
+        self.calls = 0
+        self.running = 0
+        self.most_running = 0
+        # Calls come from several threads at once: the counters must be updated one at a time.
+        self._lock = threading.Lock()
+
+    def generate(self, prompt: str) -> str:
+        """Wait a little, then reply, fail or raise KeyboardInterrupt."""
+        with self._lock:
+            self.calls += 1
+            call_number = self.calls
+            self.running += 1
+            self.most_running = max(self.most_running, self.running)
+        time.sleep(0.2)
+        with self._lock:
+            self.running -= 1
+        if call_number == self.interrupt_on_call:
+            # Press Ctrl+C: the main thread receives it, as with a real key press
+            _thread.interrupt_main()
+        if call_number in self.failing_calls:
+            raise LLMError("prepared failure")
+        return self.reply
+
+
 class TestRunMyAlphaevolve(unittest.TestCase):
     """Checks on run_my_alphaevolve, using a tiny made-up problem."""
 
@@ -77,14 +119,16 @@ class TestRunMyAlphaevolve(unittest.TestCase):
         # Runs before every test: a problem whose initial program scores 3.5
         self.problem = Problem(INITIAL_CODE)
 
-    def run_quietly(self, problem: Problem, llm: LLM, iterations: int = 1) -> Database:
+    def run_quietly(
+        self, problem: Problem, llm: LLM, iterations: int = 1, workers: int = 1
+    ) -> Database:
         """Run the loop without showing what it prints, and return its database."""
         # Send print() output into a throwaway variable instead of the screen
         with contextlib.redirect_stdout(io.StringIO()):
             # Programs are scored inside this process: fast, and fine for trusted test code
             # seed=0 makes the random choice of parents the same on every test run
             return run_my_alphaevolve(
-                problem, llm, InProcessEvaluator(read_answer), iterations, seed=0
+                problem, llm, InProcessEvaluator(read_answer), iterations, seed=0, workers=workers
             )
 
     def parent_positions(self, database: Database) -> list[int]:
@@ -213,6 +257,52 @@ class TestRunMyAlphaevolve(unittest.TestCase):
         # The first prompt can only show the initial program; a later one shows a child
         self.assertIn("answer = 3.5", server.prompts[0])
         self.assertTrue(any("answer = 4.5" in prompt for prompt in server.prompts[1:]))
+
+    def test_several_workers_produce_one_child_per_iteration(self) -> None:
+        server = serve(self, ["answer = 4.5\n"])
+        database = self.run_quietly(self.problem, server.llm(), iterations=12, workers=4)
+        self.assertEqual(len(server.prompts), 12)
+        iterations = sorted(program.iteration for program in database.programs.values())
+        self.assertEqual(iterations, list(range(13)))
+
+    def test_workers_run_at_the_same_time(self) -> None:
+        llm = SlowLLM("answer = 4.5\n")
+        self.run_quietly(self.problem, llm, iterations=6, workers=3)
+        self.assertEqual(llm.most_running, 3)
+
+    def test_one_worker_runs_one_iteration_at_a_time(self) -> None:
+        llm = SlowLLM("answer = 4.5\n")
+        self.run_quietly(self.problem, llm, iterations=3, workers=1)
+        self.assertEqual(llm.most_running, 1)
+
+    def test_children_of_a_parallel_run_descend_from_stored_programs(self) -> None:
+        database = self.run_quietly(
+            self.problem, SlowLLM("answer = 4.5\n"), iterations=9, workers=3
+        )
+        for program in database.programs.values():
+            if program.parent_id is not None:
+                self.assertIsNotNone(database.get(program.parent_id))
+        # Later iterations start from children finished meanwhile
+        self.assertGreater(max(p.generation for p in database.programs.values()), 1)
+
+    def test_failing_llm_stops_a_parallel_run(self) -> None:
+        workers = 3
+        llm = SlowLLM("answer = 4.5\n", failing_calls=set(range(1, 100)))
+        database = self.run_quietly(self.problem, llm, iterations=50, workers=workers)
+        self.assertLessEqual(llm.calls, MAX_LLM_FAILURES_IN_A_ROW + workers - 1)
+        self.assertEqual(len(database.programs), 1)
+
+    def test_ctrl_c_keeps_the_iterations_already_running(self) -> None:
+        # Ctrl+C is pressed during the third call, while another one runs beside it
+        llm = SlowLLM("answer = 4.5\n", interrupt_on_call=3)
+        database = self.run_quietly(self.problem, llm, iterations=20, workers=2)
+        # Nothing new started, and every iteration started before is kept
+        self.assertLess(llm.calls, 6)
+        self.assertEqual(len(database.programs), 1 + llm.calls)
+
+    def test_fewer_than_one_worker_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            self.run_quietly(self.problem, prepared_llm(self, ["answer = 4.5\n"]), workers=0)
 
     def test_failing_initial_program_stops_the_run(self) -> None:
         # Valid Python with a description, but it crashes as soon as it runs
@@ -348,6 +438,16 @@ class TestRunScript(unittest.TestCase):
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         self.assertIn("Evaluator: a Docker container per program", result.stdout)
         self.assertIn("Iteration 1/1: child score=1.8", result.stdout)
+
+    def test_workers_option_runs_iterations_at_once(self) -> None:
+        result = self.launch_example("--iterations", "4", "--workers", "2")
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertEqual(result.stdout.count("child score="), 4)
+
+    def test_fewer_than_one_worker_is_reported(self) -> None:
+        result = self.launch_example("--workers", "0")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--workers must be 1 or more", result.stderr)
 
     def test_iterations_option_sets_the_length_of_the_run(self) -> None:
         result = self.launch_example("--iterations", "3")

@@ -273,6 +273,30 @@ number, for example `--seed 7`, to get the same choices again. This repeats the
 choice of parents only: an LLM rarely gives the same reply twice, so two runs
 with the same seed still drift apart.
 
+## Running several programs at once
+
+`--workers` sets how many iterations run at the same time, as in AlphaEvolve
+and OpenEvolve (1 by default). Each worker asks the LLM for a program and
+evaluates it in its own container; when one finishes, its result is stored and
+the worker starts a new iteration, picking a parent from the programs finished
+so far.
+
+```powershell
+.venv\Scripts\python.exe scripts\run.py examples\circle_packing\initial_program.py examples\circle_packing\evaluation.py --model qwen2.5-coder:3b --iterations 100 --workers 4
+```
+
+How many workers help depends on the machine:
+
+- **The LLM.** Most of an iteration is spent waiting for the reply. A cloud
+  provider answers many requests at once; a local Ollama server answers several
+  at once only if configured to (its `OLLAMA_NUM_PARALLEL` setting), and shares
+  the GPU between them.
+- **The CPU and memory.** Each container may use one CPU and 1 GB of memory.
+
+Results arrive in no fixed order, so the progress lines and `programs.jsonl`
+are not sorted by iteration, and `--seed` no longer makes the choice of parents
+repeatable.
+
 ## Saving, stopping and continuing a run
 
 Add `--output` with a folder name to save a run. The folder then holds:
@@ -284,7 +308,9 @@ Add `--output` with a folder name to save a run. The folder then holds:
 
 Each program is written the moment it has been evaluated, so:
 
-- **To stop a run**, press Ctrl+C. Every finished iteration is already saved.
+- **To stop a run**, press Ctrl+C. Every finished iteration is already saved,
+  and the iterations in progress are finished and saved too; press Ctrl+C a
+  second time to skip them.
 - **To continue it**, launch the same command with the same `--output` folder.
   `--iterations` then means that many *more* iterations. The initial program is
   not evaluated again.
