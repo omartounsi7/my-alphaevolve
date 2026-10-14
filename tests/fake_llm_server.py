@@ -8,8 +8,11 @@ any network or any LLM.
 
 import json
 import threading
+import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
+
+from my_alphaevolve.llm import OpenAICompatibleLLM
 
 # A reply the fake server can be told to give: text for a normal answer, or a
 # number for a failure with that HTTP status code (500 means "server error")
@@ -78,6 +81,15 @@ class FakeLLMServer:
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._thread.start()
 
+    @property
+    def prompts(self) -> list[str]:
+        """The prompts received so far, in order."""
+        return [request["body"]["messages"][0]["content"] for request in self.requests]
+
+    def llm(self) -> OpenAICompatibleLLM:
+        """Return a real LLM that talks to this server."""
+        return OpenAICompatibleLLM("test-model", base_url=self.url, max_retries=0)
+
     def stop(self) -> None:
         """Stop the server and free its port."""
         self._server.shutdown()
@@ -91,3 +103,15 @@ class FakeLLMServer:
     def __exit__(self, *exception_details: object) -> None:
         """Stop the server when the "with" block ends, even after an error."""
         self.stop()
+
+
+def serve(test_case: unittest.TestCase, replies: list[PreparedReply]) -> FakeLLMServer:
+    """Start a stand-in server that is stopped automatically when the test ends."""
+    server = FakeLLMServer(replies)
+    test_case.addCleanup(server.stop)
+    return server
+
+
+def prepared_llm(test_case: unittest.TestCase, replies: list[PreparedReply]) -> OpenAICompatibleLLM:
+    """Return a real LLM whose replies come from a stand-in server, stopped after the test."""
+    return serve(test_case, replies).llm()

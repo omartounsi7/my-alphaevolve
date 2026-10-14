@@ -36,29 +36,6 @@ class LLM(ABC):
         """
 
 
-class FakeLLM(LLM):
-    """A stand-in LLM that returns prepared replies, for testing the loop without a network."""
-
-    def __init__(self, replies: list[str]) -> None:
-        """Prepare the fake with the replies it will give, in order.
-
-        Raises ValueError if replies is empty.
-        """
-        if not replies:
-            raise ValueError("FakeLLM needs at least one reply.")
-        self.replies: list[str] = list(replies)
-        self.prompts: list[str] = []
-
-    def generate(self, prompt: str) -> str:
-        """Record the prompt and return the next prepared reply.
-
-        After the last reply, it starts again from the first one.
-        """
-        call_number = len(self.prompts)
-        self.prompts.append(prompt)
-        return self.replies[call_number % len(self.replies)]
-
-
 class OpenAICompatibleLLM(LLM):
     """A real LLM, reached through the OpenAI-compatible interface."""
 

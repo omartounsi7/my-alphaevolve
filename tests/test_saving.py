@@ -11,10 +11,10 @@ from typing import Any
 
 from docker_check import docker_is_available
 from doubles import InProcessEvaluator
-from fake_llm_server import FakeLLMServer
+from fake_llm_server import FakeLLMServer, prepared_llm, serve
 
 from my_alphaevolve.database import Database
-from my_alphaevolve.llm import LLM, FakeLLM
+from my_alphaevolve.llm import LLM
 from my_alphaevolve.loop import run_my_alphaevolve
 from my_alphaevolve.problem import Problem
 from my_alphaevolve.storage import RunStorage
@@ -85,7 +85,7 @@ class TestSavingARun(unittest.TestCase):
         return (self.output_folder / "best_program.py").read_text(encoding="utf-8")
 
     def test_every_program_is_saved_with_its_iteration(self) -> None:
-        database = self.run_quietly(FakeLLM(["answer = 4.5\n"]), iterations=3)
+        database = self.run_quietly(prepared_llm(self, ["answer = 4.5\n"]), iterations=3)
         # The initial program is iteration 0; the children are 1, 2, 3
         self.assertEqual(self.saved_iterations(), [0, 1, 2, 3])
         saved_ids = [p.id for p in RunStorage(self.output_folder).load_programs()]
@@ -93,22 +93,24 @@ class TestSavingARun(unittest.TestCase):
 
     def test_best_program_file_follows_the_best_program(self) -> None:
         # The best reply is the second one; the third must not replace it
-        llm = FakeLLM(["answer = 4.0\n", "answer = 9.0\n", "answer = 5.0\n"])
+        server = serve(self, ["answer = 4.0\n", "answer = 9.0\n", "answer = 5.0\n"])
+        llm = server.llm()
         self.run_quietly(llm, iterations=3)
         self.assertIn("answer = 9.0", self.best_program_file())
         self.assertIn("found at iteration 2", self.best_program_file())
 
     def test_best_program_file_holds_the_initial_program_when_nothing_beats_it(self) -> None:
-        self.run_quietly(FakeLLM(["answer = 1.0\n"]), iterations=2)
+        self.run_quietly(prepared_llm(self, ["answer = 1.0\n"]), iterations=2)
         self.assertIn("answer = 3.5", self.best_program_file())
 
     def test_running_again_continues_the_saved_run(self) -> None:
-        self.run_quietly(FakeLLM(["answer = 4.5\n"]), iterations=2)
-        second_llm = FakeLLM(["answer = 6.0\n"])
+        self.run_quietly(prepared_llm(self, ["answer = 4.5\n"]), iterations=2)
+        second_server = serve(self, ["answer = 6.0\n"])
+        second_llm = second_server.llm()
         database = self.run_quietly(second_llm, iterations=3)
         # Three more iterations, numbered after the first two
         self.assertEqual(self.saved_iterations(), [0, 1, 2, 3, 4, 5])
-        self.assertEqual(len(second_llm.prompts), 3)
+        self.assertEqual(len(second_server.prompts), 3)
         # The database of the second session holds the programs of both sessions
         self.assertEqual(len(database.programs), 6)
         best_program = database.get_best_program()
@@ -117,16 +119,18 @@ class TestSavingARun(unittest.TestCase):
         self.assertIn("answer = 6.0", self.best_program_file())
 
     def test_continuing_does_not_evaluate_the_initial_program_again(self) -> None:
-        self.run_quietly(FakeLLM(["answer = 4.5\n"]), iterations=1)
+        self.run_quietly(prepared_llm(self, ["answer = 4.5\n"]), iterations=1)
         # The second session is given a broken initial program. A new run would
         # stop on it; a continued run never looks at it.
         broken_problem = Problem('"""Describe."""\n\nanswer = 1 / 0\n')
-        database = self.run_quietly(FakeLLM(["answer = 4.5\n"]), 1, problem=broken_problem)
+        database = self.run_quietly(
+            prepared_llm(self, ["answer = 4.5\n"]), 1, problem=broken_problem
+        )
         self.assertEqual(len(database.programs), 3)
 
     def test_children_of_a_continued_run_descend_from_saved_programs(self) -> None:
-        self.run_quietly(FakeLLM(["answer = 4.5\n"]), iterations=2)
-        database = self.run_quietly(FakeLLM(["answer = 6.0\n"]), iterations=5)
+        self.run_quietly(prepared_llm(self, ["answer = 4.5\n"]), iterations=2)
+        database = self.run_quietly(prepared_llm(self, ["answer = 6.0\n"]), iterations=5)
         for program in database.programs.values():
             if program.parent_id is not None:
                 # Every parent must be found, including those loaded from the file
@@ -142,13 +146,13 @@ class TestSavingARun(unittest.TestCase):
 
     def test_stopped_run_can_be_continued(self) -> None:
         self.run_quietly(InterruptingLLM("answer = 4.5\n", interrupt_on_call=3), iterations=10)
-        self.run_quietly(FakeLLM(["answer = 4.5\n"]), iterations=2)
+        self.run_quietly(prepared_llm(self, ["answer = 4.5\n"]), iterations=2)
         self.assertEqual(self.saved_iterations(), [0, 1, 2, 3, 4])
 
     def test_nothing_is_written_without_an_output_folder(self) -> None:
         with contextlib.redirect_stdout(io.StringIO()):
             evaluator = InProcessEvaluator(read_answer)
-            run_my_alphaevolve(self.problem, FakeLLM(["answer = 4.5\n"]), evaluator, 2)
+            run_my_alphaevolve(self.problem, prepared_llm(self, ["answer = 4.5\n"]), evaluator, 2)
         self.assertFalse(self.output_folder.exists())
 
 

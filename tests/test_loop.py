@@ -12,10 +12,10 @@ from typing import Any
 
 from docker_check import docker_is_available
 from doubles import InProcessEvaluator
-from fake_llm_server import FakeLLMServer
+from fake_llm_server import FakeLLMServer, prepared_llm, serve
 
 from my_alphaevolve.database import Database
-from my_alphaevolve.llm import LLM, FakeLLM, LLMError
+from my_alphaevolve.llm import LLM, LLMError
 from my_alphaevolve.loop import MAX_LLM_FAILURES_IN_A_ROW, run_my_alphaevolve
 from my_alphaevolve.problem import Problem
 from my_alphaevolve.program import Program
@@ -103,15 +103,16 @@ class TestRunMyAlphaevolve(unittest.TestCase):
         return children[0]
 
     def test_llm_receives_a_prompt_with_the_description_and_the_parent_code(self) -> None:
-        llm = FakeLLM(["answer = 4.5\n"])
+        server = serve(self, ["answer = 4.5\n"])
+        llm = server.llm()
         self.run_quietly(self.problem, llm)
-        self.assertEqual(len(llm.prompts), 1)
-        prompt = llm.prompts[0]
+        self.assertEqual(len(server.prompts), 1)
+        prompt = server.prompts[0]
         self.assertIn("Problem description:\nMake answer as large as possible.", prompt)
         self.assertIn("answer = 3.5", prompt)
 
     def test_database_holds_the_initial_program_and_its_child(self) -> None:
-        database = self.run_quietly(self.problem, FakeLLM(["answer = 4.5\n"]))
+        database = self.run_quietly(self.problem, prepared_llm(self, ["answer = 4.5\n"]))
         self.assertEqual(len(database.programs), 2)
         child = self.child_of(database)
         # The child's parent is the initial program, which has no parent itself
@@ -122,84 +123,97 @@ class TestRunMyAlphaevolve(unittest.TestCase):
         self.assertEqual(child.generation, 1)
 
     def test_child_is_evaluated_and_holds_only_the_code_of_the_reply(self) -> None:
-        llm = FakeLLM(["A better one:\n```python\nanswer = 4.5\n```\n"])
+        server = serve(self, ["A better one:\n```python\nanswer = 4.5\n```\n"])
+        llm = server.llm()
         child = self.child_of(self.run_quietly(self.problem, llm))
         self.assertEqual(child.code, "answer = 4.5\n")
         self.assertEqual(child.score, 4.5)
 
     def test_better_child_becomes_the_best_program(self) -> None:
-        database = self.run_quietly(self.problem, FakeLLM(["answer = 4.5\n"]))
+        database = self.run_quietly(self.problem, prepared_llm(self, ["answer = 4.5\n"]))
         self.assertIs(database.get_best_program(), self.child_of(database))
 
     def test_worse_child_does_not_become_the_best_program(self) -> None:
-        database = self.run_quietly(self.problem, FakeLLM(["answer = 1.0\n"]))
+        database = self.run_quietly(self.problem, prepared_llm(self, ["answer = 1.0\n"]))
         best_program = database.get_best_program()
         assert best_program is not None
         self.assertEqual(best_program.code, INITIAL_CODE)
 
     def test_failing_child_is_stored_with_the_failure_score(self) -> None:
         # The reply is not a program at all, so its evaluation fails
-        database = self.run_quietly(self.problem, FakeLLM(["I cannot help with that."]))
+        database = self.run_quietly(self.problem, prepared_llm(self, ["I cannot help with that."]))
         self.assertEqual(self.child_of(database).score, float("-inf"))
         best_program = database.get_best_program()
         assert best_program is not None
         self.assertEqual(best_program.code, INITIAL_CODE)
 
     def test_each_iteration_asks_the_llm_once_and_stores_one_child(self) -> None:
-        llm = FakeLLM(["answer = 4.5\n"])
+        server = serve(self, ["answer = 4.5\n"])
+        llm = server.llm()
         database = self.run_quietly(self.problem, llm, iterations=5)
-        self.assertEqual(len(llm.prompts), 5)
+        self.assertEqual(len(server.prompts), 5)
         # Five children plus the initial program
         self.assertEqual(len(database.programs), 6)
 
     def test_zero_iterations_only_evaluates_the_initial_program(self) -> None:
-        llm = FakeLLM(["answer = 4.5\n"])
+        server = serve(self, ["answer = 4.5\n"])
+        llm = server.llm()
         database = self.run_quietly(self.problem, llm, iterations=0)
-        self.assertEqual(llm.prompts, [])
+        self.assertEqual(server.prompts, [])
         self.assertEqual(len(database.programs), 1)
 
     def test_negative_iterations_are_rejected(self) -> None:
         with self.assertRaises(ValueError):
-            self.run_quietly(self.problem, FakeLLM(["answer = 4.5\n"]), iterations=-1)
+            self.run_quietly(self.problem, prepared_llm(self, ["answer = 4.5\n"]), iterations=-1)
 
     def test_best_program_is_the_best_of_all_iterations(self) -> None:
         # The best reply is neither the first nor the last one
-        llm = FakeLLM(["answer = 4.0\n", "answer = 9.0\n", "answer = 5.0\n"])
+        server = serve(self, ["answer = 4.0\n", "answer = 9.0\n", "answer = 5.0\n"])
+        llm = server.llm()
         best_program = self.run_quietly(self.problem, llm, iterations=3).get_best_program()
         assert best_program is not None
         self.assertEqual(best_program.score, 9.0)
 
     def test_children_can_become_parents(self) -> None:
-        database = self.run_quietly(self.problem, FakeLLM(["answer = 4.5\n"]), iterations=30)
+        database = self.run_quietly(
+            self.problem, prepared_llm(self, ["answer = 4.5\n"]), iterations=30
+        )
         deepest_generation = max(program.generation for program in database.programs.values())
         # A generation above 1 means some child was itself made from a child
         self.assertGreater(deepest_generation, 1)
 
     def test_same_seed_gives_the_same_choice_of_parents(self) -> None:
-        first = self.run_quietly(self.problem, FakeLLM(["answer = 4.5\n"]), iterations=30)
-        second = self.run_quietly(self.problem, FakeLLM(["answer = 4.5\n"]), iterations=30)
+        first = self.run_quietly(
+            self.problem, prepared_llm(self, ["answer = 4.5\n"]), iterations=30
+        )
+        second = self.run_quietly(
+            self.problem, prepared_llm(self, ["answer = 4.5\n"]), iterations=30
+        )
         self.assertEqual(self.parent_positions(first), self.parent_positions(second))
 
     def test_program_calling_random_seed_does_not_change_the_choice_of_parents(self) -> None:
         # Search code written by an LLM often seeds the shared random generator.
         # Here the programs even run inside this process, the worst case.
         seeding_reply = "import random\nrandom.seed(0)\nanswer = 4.5\n"
-        normal = self.run_quietly(self.problem, FakeLLM(["answer = 4.5\n"]), iterations=30)
-        seeding = self.run_quietly(self.problem, FakeLLM([seeding_reply]), iterations=30)
+        normal = self.run_quietly(
+            self.problem, prepared_llm(self, ["answer = 4.5\n"]), iterations=30
+        )
+        seeding = self.run_quietly(self.problem, prepared_llm(self, [seeding_reply]), iterations=30)
         self.assertEqual(self.parent_positions(normal), self.parent_positions(seeding))
 
     def test_later_prompts_show_the_code_of_earlier_children(self) -> None:
-        llm = FakeLLM(["answer = 4.5\n"])
+        server = serve(self, ["answer = 4.5\n"])
+        llm = server.llm()
         self.run_quietly(self.problem, llm, iterations=30)
         # The first prompt can only show the initial program; a later one shows a child
-        self.assertIn("answer = 3.5", llm.prompts[0])
-        self.assertTrue(any("answer = 4.5" in prompt for prompt in llm.prompts[1:]))
+        self.assertIn("answer = 3.5", server.prompts[0])
+        self.assertTrue(any("answer = 4.5" in prompt for prompt in server.prompts[1:]))
 
     def test_failing_initial_program_stops_the_run(self) -> None:
         # Valid Python with a description, but it crashes as soon as it runs
         code = '"""Make answer as large as possible."""\n\nanswer = 1 / 0\n'
         with self.assertRaises(ValueError):
-            self.run_quietly(Problem(code), FakeLLM(["answer = 4.5\n"]))
+            self.run_quietly(Problem(code), prepared_llm(self, ["answer = 4.5\n"]))
 
     def test_iteration_without_a_reply_is_skipped_and_the_run_carries_on(self) -> None:
         # The LLM fails on its second call only
