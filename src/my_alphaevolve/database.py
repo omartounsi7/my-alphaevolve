@@ -1,22 +1,14 @@
-"""The Database class: the memory of the evolutionary search.
-
-Parents are chosen with MAP-Elites. Working programs are placed in a grid of
-cells according to two features of their code, complexity and diversity; each
-cell keeps its best program, its elite; and a parent is an elite picked at random.
-"""
+"""The Database class: the memory of the evolutionary search."""
 
 import math
 import random
 
 from my_alphaevolve.program import Program
 
-# Bins per feature: the grid has at most this number squared of cells.
-DEFAULT_BINS_PER_FEATURE = 10
-# How many programs the diversity of a program is measured against, as in OpenEvolve.
-DIVERSITY_REFERENCE_SIZE = 20
-
-# A cell of the grid: the bin of each feature.
-Cell = tuple[int, int]
+# How many of the best programs form the archive that exploitation picks from.
+DEFAULT_ARCHIVE_SIZE = 10
+# How often the parent is picked from the archive (0.7 = 70% of the time).
+DEFAULT_EXPLOITATION_RATIO = 0.7
 
 
 def score_of(program: Program) -> float:
@@ -24,67 +16,33 @@ def score_of(program: Program) -> float:
     return program.score if program.score is not None else float("-inf")
 
 
-def code_complexity(code: str) -> float:
-    """Return the complexity of a program: the length of its code, as in OpenEvolve."""
-    return float(len(code))
-
-
-def code_difference(first: str, second: str) -> float:
-    """Return a quick estimate of how different two programs are; 0 for identical code.
-
-    OpenEvolve's formula: it combines the differences in length, in number of
-    lines, and in the set of characters used.
-    """
-    if first == second:
-        return 0.0
-    length_difference = abs(len(first) - len(second))
-    line_difference = abs(first.count("\n") - second.count("\n"))
-    character_difference = len(set(first) ^ set(second))
-    return length_difference * 0.1 + line_difference * 10 + character_difference * 0.5
-
-
-def feature_bin(value: float, lowest: float, highest: float, bins: int) -> int:
-    """Return which of bins equal slices of [lowest, highest] the value falls in."""
-    if highest == lowest:
-        return bins // 2
-    position = (value - lowest) / (highest - lowest)
-    return min(bins - 1, int(position * bins))
-
-
 class Database:
     """Stores every program produced so far and picks which one to mutate next."""
 
     def __init__(
         self,
-        bins_per_feature: int = DEFAULT_BINS_PER_FEATURE,
+        archive_size: int = DEFAULT_ARCHIVE_SIZE,
+        exploitation_ratio: float = DEFAULT_EXPLOITATION_RATIO,
         seed: int | None = None,
     ) -> None:
         """Create an empty database.
 
-        bins_per_feature sets the size of the grid; seed fixes the random picks,
-        so that they can be repeated.
+        archive_size and exploitation_ratio tune how sample picks parents.
+        seed fixes the random picks, so that they can be repeated.
         """
-        if bins_per_feature < 1:
-            raise ValueError(f"bins_per_feature must be 1 or more, got {bins_per_feature}")
+        if archive_size < 1:
+            raise ValueError(f"archive_size must be 1 or more, got {archive_size}")
+        if not 0.0 <= exploitation_ratio <= 1.0:
+            raise ValueError(f"exploitation_ratio must be from 0 to 1, got {exploitation_ratio}")
         self.programs: dict[str, Program] = {}
-        self.bins_per_feature: int = bins_per_feature
+        self.archive_size: int = archive_size
+        self.exploitation_ratio: float = exploitation_ratio
         self.random_generator: random.Random = random.Random(seed)
-        # The code of the first working programs: diversity is measured against them.
-        self.reference_codes: list[str] = []
-        # The diversity of each code against the current reference programs.
-        self._diversity_cache: dict[str, float] = {}
 
     def add(self, program: Program, results: float) -> None:
         """Store a program and its score under its id."""
         program.score = results
         self.programs[program.id] = program
-        if (
-            math.isfinite(results)
-            and len(self.reference_codes) < DIVERSITY_REFERENCE_SIZE
-            and program.code not in self.reference_codes
-        ):
-            self.reference_codes.append(program.code)
-            self._diversity_cache.clear()
 
     def get(self, program_id: str) -> Program | None:
         """Look up one program by its id (returns None if no program has that id)."""
@@ -101,61 +59,40 @@ class Database:
             if program.score is not None and math.isfinite(program.score)
         ]
 
-    def diversity(self, code: str) -> float:
-        """Return how different a program is, on average, from the reference programs."""
-        if code not in self._diversity_cache:
-            differences = [
-                code_difference(code, reference)
-                for reference in self.reference_codes
-                if reference != code
-            ]
-            self._diversity_cache[code] = (
-                sum(differences) / len(differences) if differences else 0.0
-            )
-        return self._diversity_cache[code]
+    def get_top_programs(self, count: int) -> list[Program]:
+        """Return the count best working programs, best first.
 
-    def get_elites(self) -> dict[Cell, Program]:
-        """Return the map of elites: the best program of each occupied cell.
-
-        The map is rebuilt from all working programs each time, so the bins
-        always span the range of values seen so far. A program takes a cell
-        from its elite only with a strictly higher score.
+        Returns fewer if the database holds fewer working programs. Among
+        programs with the same score, the one added first comes first.
         """
-        working_programs = self.get_working_programs()
-        features = [
-            (code_complexity(program.code), self.diversity(program.code))
-            for program in working_programs
-        ]
-        if not features:
-            return {}
-        lowest = [min(values[index] for values in features) for index in range(2)]
-        highest = [max(values[index] for values in features) for index in range(2)]
-
-        elites: dict[Cell, Program] = {}
-        for program, values in zip(working_programs, features, strict=True):
-            cell = (
-                feature_bin(values[0], lowest[0], highest[0], self.bins_per_feature),
-                feature_bin(values[1], lowest[1], highest[1], self.bins_per_feature),
-            )
-            elite = elites.get(cell)
-            if elite is None or score_of(program) > score_of(elite):
-                elites[cell] = program
-        return elites
+        ranked_programs = sorted(self.get_working_programs(), key=score_of, reverse=True)
+        return ranked_programs[:count]
 
     def sample(self) -> Program:
-        """Pick the parent for the next mutation: an elite of the map, at random.
+        """Pick the parent for the next mutation.
 
-        Failed programs are never in the map, so they are only picked if the
-        database holds nothing else.
+        One of two strategies is chosen at random each time:
+
+        - exploitation (exploitation_ratio of the time): a random program from
+          the archive, the archive_size best programs. This refines what
+          already works.
+        - exploration (the rest of the time): a random working program, good
+          or bad. This gives less successful ideas a chance to lead somewhere.
+
+        Failed programs are never picked, unless the database holds nothing else.
 
         Raises ValueError if the database is empty.
         """
         if not self.programs:
             raise ValueError("Cannot sample from an empty database; add a program first.")
-        elites = list(self.get_elites().values())
-        if not elites:
+
+        working_programs = self.get_working_programs()
+        if not working_programs:
             return self.random_generator.choice(list(self.programs.values()))
-        return self.random_generator.choice(elites)
+
+        if self.random_generator.random() < self.exploitation_ratio:
+            return self.random_generator.choice(self.get_top_programs(self.archive_size))
+        return self.random_generator.choice(working_programs)
 
     def get_best_program(self) -> Program | None:
         """Return the highest-scoring program (None if the database is empty)."""
