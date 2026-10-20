@@ -75,7 +75,7 @@ repository or on the command line.
 $env:OPENAI_API_KEY = "paste-your-key-here"
 .venv\Scripts\python.exe scripts\run.py examples\function_minimization\initial_program.py examples\function_minimization\evaluation.py --model NAME-OF-THE-MODEL --llm-url https://ADDRESS-OF-THE-PROVIDER/v1
 ```
-
+ 
 ```bash
 # Linux and macOS
 export OPENAI_API_KEY="paste-your-key-here"
